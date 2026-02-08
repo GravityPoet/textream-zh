@@ -82,6 +82,10 @@ jobs:
 
             app "Textream.app"
 
+            postflight do
+              system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Textream.app"]
+            end
+
             zap trash: [
               "~/Library/Preferences/dev.fka.Textream.plist",
               "~/Library/Saved Application State/dev.fka.Textream.savedState",
