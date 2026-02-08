@@ -52,6 +52,7 @@ Then right-click the app → **Open**. After the first launch, macOS remembers y
 - **Tap to jump** — Tap any word in the overlay to jump the tracker to that position.
 - **Pause & resume** — Go off-script, take a break, come back. The tracker picks up where you left off.
 - **Adjustable size** — Resize the overlay width and text height from Settings (⌘,) to fit your screen.
+- **Language selection** — Choose your preferred speech recognition language from Settings (⌘,).
 - **Completely private** — All processing happens on-device. No accounts, no tracking, no data leaves your Mac.
 
 ## Who it's for

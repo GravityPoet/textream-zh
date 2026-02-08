@@ -48,3 +48,49 @@ jobs:
             ```
 
             Then open Textream normally.
+
+            Or install via Homebrew:
+
+            ```
+            brew install f/textream/textream
+            ```
+
+      - name: Compute DMG SHA256
+        id: sha
+        run: echo "sha256=$(shasum -a 256 Textream/build/release/Textream.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew Cask tap
+        env:
+          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+          VERSION: ${{ steps.version.outputs.tag }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+        run: |
+          VERSION_NUM="${VERSION#v}"
+          git clone https://x-access-token:${TAP_REPO_TOKEN}@github.com/f/homebrew-textream.git tap
+          mkdir -p tap/Casks
+          cat > tap/Casks/textream.rb << EOF
+          cask "textream" do
+            version "${VERSION_NUM}"
+            sha256 "${SHA256}"
+
+            url "https://github.com/f/textream/releases/download/${VERSION}/Textream.dmg"
+            name "Textream"
+            desc "macOS teleprompter that highlights your script in real-time as you speak"
+            homepage "https://github.com/f/textream"
+
+            depends_on macos: ">= :sonoma"
+
+            app "Textream.app"
+
+            zap trash: [
+              "~/Library/Preferences/dev.fka.Textream.plist",
+              "~/Library/Saved Application State/dev.fka.Textream.savedState",
+            ]
+          end
+          EOF
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update Textream to ${VERSION}"
+          git push
