@@ -24,7 +24,7 @@
 
 ## What is Textream?
 
-Textream is a macOS app that listens to your voice and highlights your script in real-time. It displays your text in a sleek **Dynamic Island-style overlay** at the top of your screen — visible only to you, invisible to your audience.
+Textream is a free, open-source macOS app that listens to your voice and highlights your script in real-time. It displays your text in a sleek **Dynamic Island-style overlay** at the top of your screen, a **draggable floating window**, or **fullscreen on a Sidecar iPad** — visible only to you, invisible to your audience.
 
 Paste your script, hit play, and start speaking. Words light up as you say them. When you're done, the overlay closes automatically.
 
@@ -54,12 +54,17 @@ Then right-click the app → **Open**. After the first launch, macOS remembers y
 
 - **Real-time voice tracking** — On-device speech recognition highlights words as you say them. No cloud, no latency, works offline.
 - **Dynamic Island overlay** — A notch-shaped floating overlay at the top of your screen, inspired by the MacBook Dynamic Island. Sits above all apps.
+- **Floating window mode** — Switch from the pinned notch to a draggable floating window you can place anywhere on screen.
+- **Glass effect** — Enable a translucent frosted glass background for the floating window with adjustable opacity.
+- **External display / Sidecar** — Show a fullscreen teleprompter on an external display or Sidecar iPad. Includes a mirror mode for use with prompter mirror rigs.
+- **Font customization** — Choose from font size presets (S, M, L, XL) and color presets (white, yellow, blue, green, pink).
 - **Live waveform** — Visual voice activity indicator so you always know the mic is picking you up.
 - **Tap to jump** — Tap any word in the overlay to jump the tracker to that position.
 - **Pause & resume** — Go off-script, take a break, come back. The tracker picks up where you left off.
 - **Adjustable size** — Resize the overlay width and text height from Settings (⌘,) to fit your screen.
-- **Language selection** — Choose your preferred speech recognition language from Settings (⌘,).
+- **Language selection** — Choose your preferred speech recognition language. The current language is shown in the title bar.
 - **Completely private** — All processing happens on-device. No accounts, no tracking, no data leaves your Mac.
+- **Open source** — MIT licensed. Contributions welcome.
 
 ## Who it's for
 
@@ -101,13 +106,16 @@ Textream/
 ├── Textream.xcodeproj
 ├── Info.plist
 └── Textream/
-    ├── TextreamApp.swift          # App entry point, deep link handling
-    ├── ContentView.swift          # Main text editor UI
-    ├── TextreamService.swift      # Service layer, URL scheme handling
-    ├── SpeechRecognizer.swift     # On-device speech recognition engine
-    ├── NotchOverlayController.swift  # Dynamic Island overlay window
-    ├── SettingsView.swift         # Notch size settings
-    └── Assets.xcassets/           # App icon and colors
+    ├── TextreamApp.swift              # App entry point, deep link handling
+    ├── ContentView.swift              # Main text editor UI + About view
+    ├── TextreamService.swift          # Service layer, URL scheme handling
+    ├── SpeechRecognizer.swift         # On-device speech recognition engine
+    ├── NotchOverlayController.swift   # Dynamic Island + floating overlay
+    ├── ExternalDisplayController.swift # Sidecar / external display output
+    ├── NotchSettings.swift            # User preferences and presets
+    ├── SettingsView.swift             # Tabbed settings UI
+    ├── MarqueeTextView.swift          # Word flow layout and highlighting
+    └── Assets.xcassets/               # App icon and colors
 ```
 
 ## URL Scheme
