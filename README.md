@@ -123,7 +123,7 @@ Textream/
 Textream supports the `textream://` URL scheme for launching directly into the overlay:
 
 ```
-textream://start?text=Hello%20world
+textream://read?text=Hello%20world
 ```
 
 It also registers as a macOS Service, so you can select text in any app and send it to Textream via the Services menu.
