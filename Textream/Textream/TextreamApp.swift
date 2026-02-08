@@ -9,6 +9,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let openSettings = Notification.Name("openSettings")
+    static let openAbout = Notification.Name("openAbout")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -71,6 +72,11 @@ struct TextreamApp: App {
         .windowResizability(.contentSize)
 
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Textream") {
+                    NotificationCenter.default.post(name: .openAbout, object: nil)
+                }
+            }
             CommandGroup(after: .appSettings) {
                 Button("Settings…") {
                     NotificationCenter.default.post(name: .openSettings, object: nil)

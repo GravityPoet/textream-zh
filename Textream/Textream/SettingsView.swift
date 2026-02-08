@@ -22,7 +22,7 @@ class NotchPreviewController {
         let menuBarHeight = screenFrame.maxY - visibleFrame.maxY
 
         let maxWidth = NotchSettings.maxWidth
-        let maxHeight = menuBarHeight + NotchSettings.maxHeight
+        let maxHeight = menuBarHeight + NotchSettings.maxHeight + 40
 
         let xPosition = screenFrame.midX - maxWidth / 2
         let yPosition = screenFrame.maxY - maxHeight
@@ -61,22 +61,46 @@ struct NotchPreviewContent: View {
     private static let loremWords = "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua Ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt".split(separator: " ").map(String.init)
 
     private let highlightedCount = 42
+    // Phase 1: corners flatten (0=concave, 1=squared)
+    @State private var cornerPhase: CGFloat = 0
+    // Phase 2: detach from top (0=stuck to top, 1=moved down + rounded)
+    @State private var offsetPhase: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
-            let targetHeight = menuBarHeight + settings.textAreaHeight
+            let topPadding = menuBarHeight * (1 - offsetPhase) + 14 * offsetPhase
+            let contentHeight = topPadding + settings.textAreaHeight
             let currentWidth = settings.notchWidth
+            let yOffset = 60 * offsetPhase
 
             ZStack(alignment: .top) {
+                // Shape: concave corners flatten via cornerPhase, then cross-fade to rounded via offsetPhase
                 DynamicIslandShape(
-                    topInset: 16,
+                    topInset: 16 * (1 - cornerPhase),
                     bottomRadius: 18
                 )
                 .fill(.black)
-                .frame(width: currentWidth, height: targetHeight)
+                .opacity(Double(1 - offsetPhase))
+                .frame(width: currentWidth, height: contentHeight)
+
+                Group {
+                    if settings.floatingGlassEffect {
+                        ZStack {
+                            GlassEffectView()
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(.black.opacity(settings.glassOpacity))
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    } else {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.black)
+                    }
+                }
+                .opacity(Double(offsetPhase))
+                .frame(width: currentWidth, height: contentHeight)
 
                 VStack(spacing: 0) {
-                    Spacer().frame(height: menuBarHeight)
+                    Spacer().frame(height: topPadding)
 
                     SpeechScrollView(
                         words: Self.loremWords,
@@ -85,16 +109,47 @@ struct NotchPreviewContent: View {
                         highlightColor: settings.fontColorPreset.color,
                         isListening: false
                     )
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
                 }
-                .padding(.horizontal, 16)
-                .frame(width: currentWidth, height: targetHeight)
+                .padding(.horizontal, 20)
+                .frame(width: currentWidth, height: contentHeight)
             }
-            .frame(width: currentWidth, height: targetHeight, alignment: .top)
+            .frame(width: currentWidth, height: contentHeight, alignment: .top)
+            .offset(y: yOffset)
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             .animation(.easeInOut(duration: 0.15), value: settings.notchWidth)
             .animation(.easeInOut(duration: 0.15), value: settings.textAreaHeight)
+        }
+        .onChange(of: settings.overlayMode) { _, mode in
+            if mode == .floating {
+                // Phase 1: flatten corners while at top
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    cornerPhase = 1
+                }
+                // Phase 2: move down + round corners
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        offsetPhase = 1
+                    }
+                }
+            } else {
+                // Reverse Phase 1: move back up to top
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    offsetPhase = 0
+                }
+                // Reverse Phase 2: restore concave corners
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        cornerPhase = 0
+                    }
+                }
+            }
+        }
+        .onAppear {
+            let isFloating = settings.overlayMode == .floating
+            cornerPhase = isFloating ? 1 : 0
+            offsetPhase = isFloating ? 1 : 0
         }
     }
 }
@@ -173,13 +228,15 @@ struct SettingsView: View {
                     settings.fontSizePreset = .lg
                     settings.fontColorPreset = .white
                     settings.overlayMode = .pinned
+                    settings.floatingGlassEffect = false
+                    settings.glassOpacity = 0.15
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .buttonStyle(.plain)
             }
             .padding(12)
-            .frame(width: 120)
+            .frame(width: 140)
             .frame(maxHeight: .infinity)
             .background(Color.primary.opacity(0.04))
 
@@ -371,47 +428,45 @@ struct SettingsView: View {
     // MARK: - Overlay Mode Tab
 
     private var overlayModeTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Overlay Mode")
-                .font(.system(size: 13, weight: .medium))
-
-            VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("", selection: $settings.overlayMode) {
                 ForEach(OverlayMode.allCases) { mode in
-                    Button {
-                        settings.overlayMode = mode
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: mode.icon)
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(settings.overlayMode == mode ? Color.accentColor : .secondary)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(mode.label)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(settings.overlayMode == mode ? Color.accentColor : .primary)
-                                Text(mode.description)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text(settings.overlayMode.description)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            if settings.overlayMode == .floating {
+                Divider()
+
+                Toggle(isOn: $settings.floatingGlassEffect) {
+                    Text("Glass Effect")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+                if settings.floatingGlassEffect {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Glass Opacity")
+                                .font(.system(size: 13, weight: .medium))
                             Spacer()
-                            if settings.overlayMode == mode {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(Color.accentColor)
-                            }
+                            Text("\(Int(settings.glassOpacity * 100))%")
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(settings.overlayMode == mode ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.05))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(settings.overlayMode == mode ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1.5)
+                        Slider(
+                            value: $settings.glassOpacity,
+                            in: 0.0...0.6,
+                            step: 0.05
                         )
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }

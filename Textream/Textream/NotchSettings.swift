@@ -121,6 +121,14 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(overlayMode.rawValue, forKey: "overlayMode") }
     }
 
+    var floatingGlassEffect: Bool {
+        didSet { UserDefaults.standard.set(floatingGlassEffect, forKey: "floatingGlassEffect") }
+    }
+
+    var glassOpacity: Double {
+        didSet { UserDefaults.standard.set(glassOpacity, forKey: "glassOpacity") }
+    }
+
     var font: NSFont {
         .systemFont(ofSize: fontSizePreset.pointSize, weight: .semibold)
     }
@@ -143,5 +151,8 @@ class NotchSettings {
         self.fontSizePreset = FontSizePreset(rawValue: UserDefaults.standard.string(forKey: "fontSizePreset") ?? "") ?? .lg
         self.fontColorPreset = FontColorPreset(rawValue: UserDefaults.standard.string(forKey: "fontColorPreset") ?? "") ?? .white
         self.overlayMode = OverlayMode(rawValue: UserDefaults.standard.string(forKey: "overlayMode") ?? "") ?? .pinned
+        self.floatingGlassEffect = UserDefaults.standard.object(forKey: "floatingGlassEffect") as? Bool ?? false
+        let savedOpacity = UserDefaults.standard.double(forKey: "glassOpacity")
+        self.glassOpacity = savedOpacity > 0 ? savedOpacity : 0.15
     }
 }

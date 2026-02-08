@@ -496,6 +496,25 @@ struct NotchOverlayView: View {
     }
 }
 
+// MARK: - Glass Effect View
+
+struct GlassEffectView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = .hudWindow
+        nsView.blendingMode = .behindWindow
+        nsView.state = .active
+    }
+}
+
 // MARK: - Floating Overlay View
 
 struct FloatingOverlayView: View {
@@ -520,8 +539,19 @@ struct FloatingOverlayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.black)
+            Group {
+                if NotchSettings.shared.floatingGlassEffect {
+                    ZStack {
+                        GlassEffectView()
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.black.opacity(NotchSettings.shared.glassOpacity))
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.black)
+                }
+            }
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .opacity(appeared ? 1 : 0)
