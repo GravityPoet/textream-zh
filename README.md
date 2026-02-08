@@ -38,7 +38,7 @@ Or install with Homebrew:
 brew install f/textream/textream
 ```
 
-> Requires **macOS 14 Sonoma** or later. Works on Apple Silicon and Intel.
+> Requires **macOS 15 Sequoia** or later. Works on Apple Silicon and Intel.
 
 ### First launch
 
@@ -85,7 +85,7 @@ Then right-click the app → **Open**. After the first launch, macOS remembers y
 
 ### Requirements
 
-- macOS 14+
+- macOS 15+
 - Xcode 16+
 - Swift 5.0+
 
