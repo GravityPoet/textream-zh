@@ -158,13 +158,50 @@ class TextreamService: NSObject, ObservableObject {
         guard confirmDiscardIfNeeded() else { return }
 
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "textream")!]
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "textream")!,
+            .init(filenameExtension: "key")!,
+            .init(filenameExtension: "pptx")!,
+        ]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            self?.openFileAtURL(url)
+            let ext = url.pathExtension.lowercased()
+            if ext == "key" {
+                let alert = NSAlert()
+                alert.messageText = "Keynote files can't be imported directly"
+                alert.informativeText = "Please export your Keynote presentation as PowerPoint (.pptx) first:\n\nIn Keynote: File → Export To → PowerPoint"
+                alert.alertStyle = .informational
+                alert.runModal()
+            } else if ext == "pptx" {
+                self?.importPresentation(from: url)
+            } else {
+                self?.openFileAtURL(url)
+            }
+        }
+    }
+
+    func importPresentation(from url: URL) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let notes = try PresentationNotesExtractor.extractNotes(from: url)
+                DispatchQueue.main.async {
+                    self?.pages = notes
+                    self?.savedPages = notes
+                    self?.currentPageIndex = 0
+                    self?.readPages.removeAll()
+                    self?.currentFileURL = nil
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "Import Error"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                }
+            }
         }
     }
 

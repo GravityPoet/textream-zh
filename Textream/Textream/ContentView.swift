@@ -6,10 +6,14 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @ObservedObject private var service = TextreamService.shared
     @State private var isRunning = false
+    @State private var isDroppingPresentation = false
+    @State private var dropError: String?
+    @State private var dropAlertTitle: String = "Import Error"
     @State private var showSettings = false
     @State private var showAbout = false
     @FocusState private var isTextFocused: Bool
@@ -50,47 +54,107 @@ Happy presenting! [wave]
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Sidebar with page squares
-            if service.pages.count > 1 {
-                pageSidebar
-            }
+        ZStack {
+            HStack(spacing: 0) {
+                // Sidebar with page squares
+                if service.pages.count > 1 {
+                    pageSidebar
+                }
 
-            // Main content area
-            ZStack {
-                TextEditor(text: currentText)
-                    .font(.system(size: 16, weight: .regular, design: .rounded))
-                    .scrollContentBackground(.hidden)
-                    .padding(20)
-                    .focused($isTextFocused)
+                // Main content area
+                ZStack {
+                    TextEditor(text: currentText)
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
+                        .scrollContentBackground(.hidden)
+                        .padding(20)
+                        .focused($isTextFocused)
 
-                // Floating action button (bottom-right)
-                VStack {
-                    Spacer()
-                    HStack {
+                    // Floating action button (bottom-right)
+                    VStack {
                         Spacer()
-                        Button {
-                            if isRunning {
-                                stop()
-                            } else {
-                                run()
+                        HStack {
+                            Spacer()
+                            Button {
+                                if isRunning {
+                                    stop()
+                                } else {
+                                    run()
+                                }
+                            } label: {
+                                Image(systemName: isRunning ? "stop.fill" : "play.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 44, height: 44)
+                                    .background(isRunning ? Color.red : Color.accentColor)
+                                    .clipShape(Circle())
+                                    .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                             }
-                        } label: {
-                            Image(systemName: isRunning ? "stop.fill" : "play.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .background(isRunning ? Color.red : Color.accentColor)
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+                            .buttonStyle(.plain)
+                            .disabled(!isRunning && !hasAnyContent)
+                            .opacity(!hasAnyContent && !isRunning ? 0.4 : 1)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!isRunning && !hasAnyContent)
-                        .opacity(!hasAnyContent && !isRunning ? 0.4 : 1)
+                        .padding(20)
                     }
-                    .padding(20)
                 }
             }
+
+            // Drop zone overlay — sits on top so TextEditor doesn't steal the drop
+            if isDroppingPresentation {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(Color.accentColor)
+                    Text("Drop PowerPoint (.pptx) file")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Text("For Keynote or Google Slides,\nexport as PPTX first.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8]))
+                        .background(Color.accentColor.opacity(0.08).clipShape(RoundedRectangle(cornerRadius: 12)))
+                )
+                .padding(8)
+            }
+
+            // Invisible drop target covering entire window
+            Color.clear
+                .contentShape(Rectangle())
+                .onDrop(of: [.fileURL], isTargeted: $isDroppingPresentation) { providers in
+                    guard let provider = providers.first else { return false }
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        let ext = url.pathExtension.lowercased()
+                        if ext == "key" {
+                            DispatchQueue.main.async {
+                                dropAlertTitle = "Conversion Required"
+                                dropError = "Keynote files can't be imported directly. Please export your Keynote presentation as PowerPoint (.pptx) first, then drop the exported file here."
+                            }
+                            return
+                        }
+                        guard ext == "pptx" else {
+                            DispatchQueue.main.async {
+                                dropAlertTitle = "Import Error"
+                                dropError = "Unsupported file. Drop a PowerPoint (.pptx) file."
+                            }
+                            return
+                        }
+                        DispatchQueue.main.async {
+                            handlePresentationDrop(url: url)
+                        }
+                    }
+                    return true
+                }
+                .allowsHitTesting(isDroppingPresentation)
+        }
+        .alert(dropAlertTitle, isPresented: Binding(get: { dropError != nil }, set: { if !$0 { dropError = nil } })) {
+            Button("OK") { dropError = nil }
+        } message: {
+            Text(dropError ?? "")
         }
         .frame(minWidth: 360, minHeight: 240)
         .background(.ultraThinMaterial)
@@ -287,6 +351,32 @@ Happy presenting! [wave]
         service.currentPageIndex = 0
         service.readCurrentPage()
         isRunning = true
+    }
+
+    @State private var isImporting = false
+
+    private func handlePresentationDrop(url: URL) {
+        guard service.confirmDiscardIfNeeded() else { return }
+        isImporting = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let notes = try PresentationNotesExtractor.extractNotes(from: url)
+                DispatchQueue.main.async {
+                    service.pages = notes
+                    service.savedPages = notes
+                    service.currentPageIndex = 0
+                    service.readPages.removeAll()
+                    service.currentFileURL = nil
+                    isImporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    dropError = error.localizedDescription
+                    isImporting = false
+                }
+            }
+        }
     }
 
     private func stop() {
