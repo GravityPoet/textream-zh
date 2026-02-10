@@ -682,7 +682,12 @@ struct NotchOverlayView: View {
                 // Content - appears after container expands
                 if contentVisible {
                     VStack(spacing: 0) {
-                        Spacer().frame(height: menuBarHeight)
+                        HStack {
+                            Spacer()
+                            ElapsedTimeView(fontSize: 11)
+                                .padding(.trailing, 12)
+                        }
+                        .frame(height: menuBarHeight)
 
                         if isDone {
                             doneView
@@ -1068,6 +1073,11 @@ struct FloatingOverlayView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            ElapsedTimeView(fontSize: 11)
+                .padding(.top, 6)
+                .padding(.trailing, 10)
+        }
         .background(
             Group {
                 if NotchSettings.shared.floatingGlassEffect {

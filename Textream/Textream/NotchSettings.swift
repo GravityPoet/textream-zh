@@ -355,7 +355,7 @@ class NotchSettings {
     static let defaultHeight: CGFloat = 150
     static let defaultLocale: String = Locale.current.identifier
 
-    static let minWidth: CGFloat = 280
+    static let minWidth: CGFloat = 310
     static let maxWidth: CGFloat = 500
     static let minHeight: CGFloat = 100
     static let maxHeight: CGFloat = 400

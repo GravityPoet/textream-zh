@@ -64,7 +64,9 @@ struct SpeechScrollView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                         recalcCenter(containerHeight: containerHeight)
                     }
-                }
+                },
+                scrollOffset: scrollOffset + manualOffset,
+                viewportHeight: geo.size.height
             )
             .onPreferenceChange(WordYPreferenceKey.self) { positions in
                 let wasEmpty = wordYPositions.isEmpty
@@ -280,10 +282,29 @@ struct WordFlowLayout: View {
     var highlightWords: Bool = true
     let containerWidth: CGFloat
     var onWordTap: ((Int) -> Void)? = nil
+    var scrollOffset: CGFloat = 0
+    var viewportHeight: CGFloat = 0
+
+    // Simple layout cache to avoid re-measuring words on every highlight update
+    private static var _cacheKey: String = ""
+    private static var _cachedItems: [WordItem] = []
+    private static var _cachedLines: [[WordItem]] = []
+
+    private func cachedLayout() -> ([WordItem], [[WordItem]]) {
+        let key = "\(words.count)|\(words.first ?? "")|\(words.last ?? "")|\(font.pointSize)|\(Int(containerWidth))"
+        if key == Self._cacheKey {
+            return (Self._cachedItems, Self._cachedLines)
+        }
+        let items = buildItems()
+        let lines = buildLines(items: items)
+        Self._cacheKey = key
+        Self._cachedItems = items
+        Self._cachedLines = lines
+        return (items, lines)
+    }
 
     // Find the index of the next word to read (first non-fully-lit, non-annotation word)
-    private func nextWordIndex() -> Int {
-        let items = buildItems()
+    private func nextWordIndex(items: [WordItem]) -> Int {
         for item in items {
             if item.isAnnotation { continue }
             let charsIntoWord = highlightedCharCount - item.charOffset
@@ -297,17 +318,35 @@ struct WordFlowLayout: View {
     }
 
     var body: some View {
-        let items = buildItems()
-        let lines = buildLines(items: items)
-        let nextIdx = nextWordIndex()
+        let (items, lines) = cachedLayout()
+        let nextIdx = nextWordIndex(items: items)
+        let totalLines = lines.count
+
+        // Estimate line height for visibility culling
+        let lineH = ceil(font.pointSize * 1.3) + 8
+
+        // Determine visible range of lines
+        let canCull = viewportHeight > 0 && totalLines > 0
+        let buffer: CGFloat = 400
+        let startLine = canCull ? max(0, min(totalLines, Int(floor((-scrollOffset - buffer) / lineH)))) : 0
+        let endLine = canCull ? max(startLine, min(totalLines, Int(ceil((viewportHeight - scrollOffset + buffer) / lineH)))) : totalLines
+
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+            if startLine > 0 {
+                Color.clear.frame(height: CGFloat(startLine) * lineH)
+            }
+
+            ForEach(startLine..<endLine, id: \.self) { lineIdx in
                 HStack(spacing: 0) {
-                    ForEach(line, id: \.id) { item in
+                    ForEach(lines[lineIdx], id: \.id) { item in
                         wordView(for: item, isNextWord: item.id == nextIdx)
                             .id(item.id)
                     }
                 }
+            }
+
+            if endLine < totalLines {
+                Color.clear.frame(height: CGFloat(totalLines - endLine) * lineH)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,6 +468,25 @@ struct WordFlowLayout: View {
             currentLineWidth += wordWidth
         }
         return lines
+    }
+}
+
+// MARK: - Elapsed Time
+
+struct ElapsedTimeView: View {
+    let fontSize: CGFloat
+
+    @State private var startDate = Date()
+
+    var body: some View {
+        TimelineView(.periodic(from: startDate, by: 1)) { context in
+            let elapsed = context.date.timeIntervalSince(startDate)
+            let minutes = Int(elapsed) / 60
+            let seconds = Int(elapsed) % 60
+            Text(String(format: "%02d:%02d", minutes, seconds))
+                .font(.system(size: fontSize, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+        }
     }
 }
 

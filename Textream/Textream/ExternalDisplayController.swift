@@ -182,6 +182,11 @@ struct ExternalDisplayView: View {
                 prompterView
             }
         }
+        .overlay(alignment: .topTrailing) {
+            ElapsedTimeView(fontSize: 24)
+                .padding(.top, 20)
+                .padding(.trailing, 40)
+        }
         .scaleEffect(x: mirrorAxis?.scaleX ?? 1, y: mirrorAxis?.scaleY ?? 1)
         .animation(.easeInOut(duration: 0.5), value: isDone)
         .onChange(of: isDone) { _, done in
