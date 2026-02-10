@@ -79,7 +79,11 @@ struct SpeechScrollView: View {
             .animation(.easeOut(duration: 0.15), value: manualOffset)
             .onChange(of: geo.size.height) { _, newHeight in
                 containerHeight = newHeight
-                if isListening {
+                if highlightedCharCount == 0 && smoothWordProgress == 0 {
+                    // Initial state: center first line on screen
+                    let lineHeight = font.pointSize * 1.4
+                    scrollOffset = newHeight * 0.5 - lineHeight * 0.5
+                } else if isListening {
                     recalcCenter(containerHeight: newHeight)
                 }
             }

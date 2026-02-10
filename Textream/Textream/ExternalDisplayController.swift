@@ -207,11 +207,11 @@ struct ExternalDisplayView: View {
 
     private var prompterView: some View {
         GeometryReader { geo in
-            let fontSize = max(24, min(42, geo.size.width / 28))
+            let fontSize = max(48, min(96, geo.size.width / 14))
             let hPad = max(40, geo.size.width * 0.08)
 
             VStack(spacing: 0) {
-                Spacer().frame(height: 40)
+                Spacer().frame(height: 20)
 
                 SpeechScrollView(
                     words: words,
@@ -260,15 +260,21 @@ struct ExternalDisplayView: View {
                     }
 
                     if listeningMode != .classic {
-                        if speechRecognizer.isListening {
-                            Image(systemName: "mic.fill")
+                        Button {
+                            if speechRecognizer.isListening {
+                                speechRecognizer.stop()
+                            } else {
+                                speechRecognizer.resume()
+                            }
+                        } label: {
+                            Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
                                 .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(.yellow.opacity(0.8))
-                        } else {
-                            Image(systemName: "mic.slash.fill")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.4))
+                                .frame(width: 40, height: 40)
+                                .background(.white.opacity(0.15))
+                                .clipShape(Circle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, hPad)

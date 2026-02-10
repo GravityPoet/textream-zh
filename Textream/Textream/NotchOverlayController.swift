@@ -49,7 +49,8 @@ class NotchOverlayController: NSObject {
     private var mouseTrackingTimer: AnyCancellable?
     private var cursorTrackingTimer: AnyCancellable?
     private var currentScreenID: UInt32 = 0
-    private var statusItem: NSStatusItem?
+    private var stopButtonPanel: NSPanel?
+    private var escMonitor: Any?
 
     func show(text: String, hasNextPage: Bool = false, onComplete: (() -> Void)? = nil) {
         self.onComplete = onComplete
@@ -80,7 +81,16 @@ class NotchOverlayController: NSObject {
 
         let screenFrame = screen.frame
 
-        if settings.overlayMode == .floating && settings.followCursorWhenUndocked {
+        if settings.overlayMode == .fullscreen {
+            let fsScreen: NSScreen
+            if settings.fullscreenScreenID != 0,
+               let match = NSScreen.screens.first(where: { $0.displayID == settings.fullscreenScreenID }) {
+                fsScreen = match
+            } else {
+                fsScreen = screen
+            }
+            showFullscreen(settings: settings, screen: fsScreen)
+        } else if settings.overlayMode == .floating && settings.followCursorWhenUndocked {
             showFollowCursor(settings: settings, screen: screen)
         } else {
             switch settings.overlayMode {
@@ -88,7 +98,14 @@ class NotchOverlayController: NSObject {
                 showPinned(settings: settings, screen: screen)
             case .floating:
                 showFloating(settings: settings, screenFrame: screenFrame)
+            case .fullscreen:
+                break // handled above
             }
+        }
+
+        // Show floating stop button only in follow-cursor mode (panel ignores mouse events)
+        if settings.overlayMode == .floating && settings.followCursorWhenUndocked {
+            showStopButton(on: screen)
         }
 
         // Word tracking & silence-paused need the microphone; classic does not
@@ -157,8 +174,17 @@ class NotchOverlayController: NSObject {
         let cursorOffset: CGFloat = 8
         let x = mouse.x + cursorOffset
         let h = panel.frame.height
-        let y = mouse.y - h
+        var y = mouse.y - h
         let w = panel.frame.width
+
+        // Keep panel below the menu bar so the status bar stop button stays visible
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
+            let menuBarBottom = screen.visibleFrame.maxY
+            if y + h > menuBarBottom {
+                y = menuBarBottom - h
+            }
+        }
+
         panel.setFrame(NSRect(x: x, y: y, width: w, height: h), display: false)
     }
 
@@ -272,7 +298,44 @@ class NotchOverlayController: NSObject {
         self.panel = panel
 
         startCursorTracking()
-        showStatusItem()
+    }
+
+    private func showFullscreen(settings: NotchSettings, screen: NSScreen) {
+        let screenFrame = screen.frame
+
+        let fullscreenView = ExternalDisplayView(
+            content: overlayContent,
+            speechRecognizer: speechRecognizer,
+            mirrorAxis: nil
+        )
+        let contentView = NSHostingView(rootView: fullscreenView)
+
+        let panel = NSPanel(
+            contentRect: screenFrame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = true
+        panel.backgroundColor = .black
+        panel.hasShadow = false
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.ignoresMouseEvents = false
+        panel.sharingType = settings.hideFromScreenShare ? .none : .readOnly
+        panel.contentView = contentView
+        panel.setFrame(screenFrame, display: true)
+        panel.orderFrontRegardless()
+        self.panel = panel
+
+        // ESC key to stop the prompter
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // ESC
+                self?.dismiss()
+                return nil
+            }
+            return event
+        }
     }
 
     private func showFloating(settings: NotchSettings, screenFrame: CGRect) {
@@ -318,7 +381,8 @@ class NotchOverlayController: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             self?.stopMouseTracking()
             self?.stopCursorTracking()
-            self?.removeStatusItem()
+            self?.removeStopButton()
+            self?.removeEscMonitor()
             self?.panel?.orderOut(nil)
             self?.panel = nil
             self?.frameTracker = nil
@@ -330,7 +394,8 @@ class NotchOverlayController: NSObject {
     private func forceClose() {
         stopMouseTracking()
         stopCursorTracking()
-        removeStatusItem()
+        removeStopButton()
+        removeEscMonitor()
         cancellables.removeAll()
         speechRecognizer.forceStop()
         speechRecognizer.recognizedCharCount = 0
@@ -362,7 +427,8 @@ class NotchOverlayController: NSObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     self.stopMouseTracking()
                     self.stopCursorTracking()
-                    self.removeStatusItem()
+                    self.removeStopButton()
+                    self.removeEscMonitor()
                     self.cancellables.removeAll()
                     self.panel?.orderOut(nil)
                     self.panel = nil
@@ -378,27 +444,69 @@ class NotchOverlayController: NSObject {
         panel != nil
     }
 
-    // MARK: - Status Bar Item (for follow-cursor mode)
+    // MARK: - Floating Stop Button
 
-    private func showStatusItem() {
-        guard statusItem == nil else { return }
-        print("[Textream] Showing status bar item for follow-cursor mode")
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "■ Stop Prompter"
-        item.button?.target = self
-        item.button?.action = #selector(statusItemStop)
-        statusItem = item
+    private func showStopButton(on screen: NSScreen) {
+        guard stopButtonPanel == nil else { return }
+
+        let buttonSize: CGFloat = 36
+        let margin: CGFloat = 8
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let menuBarBottom = visibleFrame.maxY
+        let x = screenFrame.midX - buttonSize / 2
+        let y = menuBarBottom - buttonSize - margin
+
+        let stopView = NSHostingView(rootView: StopButtonView {
+            self.dismiss()
+        })
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: x, y: y, width: buttonSize, height: buttonSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.ignoresMouseEvents = false
+        panel.sharingType = .none
+        panel.contentView = stopView
+        panel.orderFrontRegardless()
+        stopButtonPanel = panel
     }
 
-    private func removeStatusItem() {
-        if let statusItem {
-            NSStatusBar.system.removeStatusItem(statusItem)
+    private func removeStopButton() {
+        stopButtonPanel?.orderOut(nil)
+        stopButtonPanel = nil
+    }
+
+    private func removeEscMonitor() {
+        if let escMonitor {
+            NSEvent.removeMonitor(escMonitor)
         }
-        statusItem = nil
+        escMonitor = nil
     }
+}
 
-    @objc private func statusItemStop() {
-        dismiss()
+// MARK: - Floating Stop Button View
+
+struct StopButtonView: View {
+    let onStop: () -> Void
+
+    var body: some View {
+        Button(action: onStop) {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(.red.opacity(0.85))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

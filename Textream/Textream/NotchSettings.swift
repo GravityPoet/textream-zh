@@ -120,28 +120,31 @@ enum FontColorPreset: String, CaseIterable, Identifiable {
 // MARK: - Overlay Mode
 
 enum OverlayMode: String, CaseIterable, Identifiable {
-    case pinned, floating
+    case pinned, floating, fullscreen
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .pinned:   return "Pinned to Notch"
-        case .floating: return "Floating Window"
+        case .pinned:     return "Pinned to Notch"
+        case .floating:   return "Floating Window"
+        case .fullscreen: return "Fullscreen"
         }
     }
 
     var description: String {
         switch self {
-        case .pinned:   return "Anchored below the notch at the top of your screen."
-        case .floating: return "A draggable window you can place anywhere. Always on top."
+        case .pinned:     return "Anchored below the notch at the top of your screen."
+        case .floating:   return "A draggable window you can place anywhere. Always on top."
+        case .fullscreen: return "Fullscreen teleprompter on the selected display. Press Esc to stop."
         }
     }
 
     var icon: String {
         switch self {
-        case .pinned:   return "rectangle.topthird.inset.filled"
-        case .floating: return "macwindow.on.rectangle"
+        case .pinned:     return "rectangle.topthird.inset.filled"
+        case .floating:   return "macwindow.on.rectangle"
+        case .fullscreen: return "rectangle.fill"
         }
     }
 }
@@ -340,6 +343,10 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(hideFromScreenShare, forKey: "hideFromScreenShare") }
     }
 
+    var fullscreenScreenID: UInt32 {
+        didSet { UserDefaults.standard.set(Int(fullscreenScreenID), forKey: "fullscreenScreenID") }
+    }
+
     var font: NSFont {
         fontFamilyPreset.font(size: fontSizePreset.pointSize)
     }
@@ -378,5 +385,7 @@ class NotchSettings {
         let savedSpeed = UserDefaults.standard.double(forKey: "scrollSpeed")
         self.scrollSpeed = savedSpeed > 0 ? savedSpeed : 3
         self.hideFromScreenShare = UserDefaults.standard.object(forKey: "hideFromScreenShare") as? Bool ?? true
+        let savedFullscreenScreenID = UserDefaults.standard.integer(forKey: "fullscreenScreenID")
+        self.fullscreenScreenID = UInt32(savedFullscreenScreenID)
     }
 }

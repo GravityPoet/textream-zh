@@ -336,6 +336,7 @@ struct SettingsView: View {
                     settings.floatingGlassEffect = false
                     settings.glassOpacity = 0.15
                     settings.followCursorWhenUndocked = false
+                    settings.fullscreenScreenID = 0
                     settings.externalDisplayMode = .off
                     settings.externalScreenID = 0
                     settings.mirrorAxis = .horizontal
@@ -393,11 +394,12 @@ struct SettingsView: View {
         .frame(minHeight: 280, maxHeight: 500)
         .background(.ultraThinMaterial)
         .onAppear {
-            previewController.show(settings: settings)
-            if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
-                // Small delay so the panel is created first
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    previewController.animateToCursor(settings: settings)
+            if settings.overlayMode != .fullscreen {
+                previewController.show(settings: settings)
+                if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        previewController.animateToCursor(settings: settings)
+                    }
                 }
             }
         }
@@ -408,10 +410,12 @@ struct SettingsView: View {
             previewController.hide()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            previewController.show(settings: settings)
-            if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    previewController.animateToCursor(settings: settings)
+            if settings.overlayMode != .fullscreen {
+                previewController.show(settings: settings)
+                if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        previewController.animateToCursor(settings: settings)
+                    }
                 }
             }
         }
@@ -423,10 +427,15 @@ struct SettingsView: View {
             }
         }
         .onChange(of: settings.overlayMode) { _, mode in
-            if mode == .floating && settings.followCursorWhenUndocked {
-                previewController.animateToCursor(settings: settings)
-            } else if mode != .floating && previewController.isAtCursor {
-                previewController.animateFromCursor()
+            if mode == .fullscreen {
+                previewController.hide()
+            } else {
+                previewController.show(settings: settings)
+                if mode == .floating && settings.followCursorWhenUndocked {
+                    previewController.animateToCursor(settings: settings)
+                } else if previewController.isAtCursor {
+                    previewController.animateFromCursor()
+                }
             }
         }
     }
@@ -926,6 +935,76 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            if settings.overlayMode == .fullscreen {
+                Divider()
+
+                Text("Display")
+                    .font(.system(size: 13, weight: .medium))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(overlayScreens, id: \.displayID) { screen in
+                        Button {
+                            settings.fullscreenScreenID = screen.displayID
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "display")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(settings.fullscreenScreenID == screen.displayID ? Color.accentColor : .secondary)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(screen.displayName)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(settings.fullscreenScreenID == screen.displayID ? Color.accentColor : .primary)
+                                    Text("\(Int(screen.frame.width))×\(Int(screen.frame.height))")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if settings.fullscreenScreenID == screen.displayID {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(settings.fullscreenScreenID == screen.displayID ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.04))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button {
+                        refreshOverlayScreens()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Refresh")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "escape")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Press Esc to stop the teleprompter.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.04))
+                )
+            }
         }
         .onAppear { refreshOverlayScreens() }
     }
@@ -934,6 +1013,9 @@ struct SettingsView: View {
         overlayScreens = NSScreen.screens
         if settings.pinnedScreenID == 0, let main = NSScreen.main {
             settings.pinnedScreenID = main.displayID
+        }
+        if settings.fullscreenScreenID == 0, let main = NSScreen.main {
+            settings.fullscreenScreenID = main.displayID
         }
     }
 }
