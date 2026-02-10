@@ -54,39 +54,76 @@ Then right-click the app → **Open**. After the first launch, macOS remembers y
 
 ### Guidance Modes
 
-- **Word Tracking** (default) — On-device speech recognition highlights words as you say them. No cloud, no latency, works offline. Supports dozens of languages.
-- **Classic** — Auto-scrolls at a constant speed. No microphone needed. Adjust scroll speed with a slider.
-- **Voice-Activated** — Scrolls while you speak, pauses when you're silent or muted. Perfect for natural pacing.
+| Mode | Description | Microphone |
+|---|---|---|
+| **Word Tracking** (default) | On-device speech recognition highlights each word as you say it. No cloud, no latency, works offline. Supports dozens of languages. | Required |
+| **Classic** | Auto-scrolls at a constant speed. No microphone needed. | Not needed |
+| **Voice-Activated** | Scrolls while you speak, pauses when you're silent or muted. Perfect for natural pacing. | Required |
+
+- **Scroll speed** — Adjustable 0.5–8 words/s for Classic and Voice-Activated modes.
+- **Speech language** — Choose your preferred speech recognition language for Word Tracking mode.
 - **Mouse scroll to catch up** — In Classic and Voice-Activated modes, scroll with your mouse to jump ahead or back. The timer pauses while you scroll and resumes from the new position.
 
-### Display
+### Overlay Modes
 
-- **Dynamic Island overlay** — A notch-shaped overlay at the top of your screen, inspired by the MacBook Dynamic Island. Sits above all apps.
-- **Notch display selection** — Choose "Follow Mouse" to move the notch to whichever display your cursor is on, or "Fixed Display" to pin it to a specific screen.
-- **Floating window mode** — Switch from the pinned notch to a draggable floating window you can place anywhere on screen.
-- **Glass effect** — Enable a translucent frosted glass background for the floating window with adjustable opacity.
-- **External display / Sidecar** — Show a fullscreen teleprompter on an external display or Sidecar iPad.
-- **Configurable mirror mode** — Flip the external display horizontally, vertically, or both for prompter mirror rigs.
-- **Adjustable size** — Resize the overlay width and text height from Settings (⌘,) to fit your screen.
+| Mode | Description |
+|---|---|
+| **Pinned to Notch** | A Dynamic Island–shaped overlay anchored below the MacBook notch. Sits above all apps. |
+| **Floating Window** | A draggable window you can place anywhere on screen. Always on top. |
+| **Fullscreen** | Fullscreen teleprompter on any display. Press **Esc** to stop. |
 
-### Customization
+#### Pinned to Notch options
 
-- **Font family** — Choose from Sans, Serif, Mono, or a dyslexia-friendly OpenDyslexic font.
-- **Font size** — Four size presets: XS, SM, LG, XL.
-- **Highlight color** — Six color presets: white, yellow, green, blue, pink, orange.
-- **Scroll speed** — Adjustable words-per-second for Classic and Voice-Activated modes (0.5–8 w/s).
-- **Language selection** — Choose your preferred speech recognition language for Word Tracking mode.
+- **Follow Mouse** — The notch moves to whichever display your cursor is on.
+- **Fixed Display** — Pin the notch to a specific screen.
+
+#### Floating Window options
+
+- **Follow Cursor** — The window follows your mouse cursor. A floating stop button lets you dismiss it.
+- **Glass Effect** — Translucent frosted glass background with adjustable opacity (0–60%).
+
+#### Fullscreen options
+
+- **Display selection** — Choose which screen to show the fullscreen teleprompter on.
+- **Esc to stop** — Press the Escape key to dismiss the fullscreen overlay.
+
+### Size
+
+- **Width** — Adjustable overlay width (280–500 px).
+- **Height** — Adjustable text area height (100–400 px).
+
+### Font & Color
+
+| Setting | Options |
+|---|---|
+| **Font Family** | Sans, Serif, Mono, OpenDyslexic (dyslexia-friendly) |
+| **Font Size** | XS (14 pt), SM (16 pt), LG (20 pt), XL (24 pt) |
+| **Highlight Color** | White, Yellow, Green, Blue, Pink, Orange |
+
+### External Display & Sidecar
+
+| Mode | Description |
+|---|---|
+| **Off** | No external display output. |
+| **Teleprompter** | Fullscreen teleprompter on the selected external display or Sidecar iPad. |
+| **Mirror** | Flipped output for prompter mirror rigs. |
+
+- **Mirror axis** — Horizontal (standard for mirrors), Vertical, or Both (180° rotation).
+- **Target display** — Pick from connected external displays and Sidecar iPads.
+- **Hide from screen share** — Hides the overlay from screen recordings and video calls.
 
 ### File Support
 
-- **PowerPoint notes import** — Drop a .pptx file to extract presenter notes as pages. For Keynote or Google Slides, export to PowerPoint first and Textream will handle the rest.
+- **PowerPoint notes import** — Drop a .pptx file to extract presenter notes as pages. For Keynote or Google Slides, export to PowerPoint first.
 - **Save as .textream files** — Save your scripts as .textream files to reuse anytime. Keep your notes organized across presentations.
+- **Multi-page support** — Navigate between pages with automatic advance. In follow-cursor mode, pages auto-advance with a 3-second countdown.
 
 ### Other
 
 - **Live waveform** — Visual voice activity indicator so you always know the mic is picking you up.
 - **Tap to jump** — Tap any word in the overlay to jump the tracker to that position.
 - **Pause & resume** — Go off-script, take a break, come back. The tracker picks up where you left off.
+- **Mute / unmute** — Toggle the microphone on or off from the overlay in any mode.
 - **Completely private** — All processing happens on-device. No accounts, no tracking, no data leaves your Mac.
 - **Auto update checker** — Checks GitHub Releases for new versions on launch and from the Textream menu.
 - **Open source** — MIT licensed. Contributions welcome.
