@@ -9,6 +9,7 @@ import SwiftUI
 import AppKit
 import Speech
 import Combine
+import CoreImage.CIFilterBuiltins
 
 // MARK: - Preview Panel Controller
 
@@ -262,7 +263,7 @@ struct NotchPreviewContent: View {
 // MARK: - Settings Tabs
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case appearance, guidance, teleprompter, external
+    case appearance, guidance, teleprompter, external, browser
 
     var id: String { rawValue }
 
@@ -272,6 +273,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .guidance:   return "Guidance"
         case .teleprompter: return "Teleprompter"
         case .external:   return "External"
+        case .browser:    return "Remote"
         }
     }
 
@@ -281,6 +283,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .guidance:   return "waveform"
         case .teleprompter: return "macwindow"
         case .external:   return "rectangle.on.rectangle"
+        case .browser:    return "antenna.radiowaves.left.and.right"
         }
     }
 }
@@ -346,6 +349,8 @@ struct SettingsView: View {
                     teleprompterTab
                 case .external:
                     externalTab
+                case .browser:
+                    browserTab
                 }
 
                 Divider()
@@ -921,6 +926,119 @@ struct SettingsView: View {
         .onAppear { refreshScreens() }
     }
 
+    // MARK: - Remote Tab
+
+    @State private var localIP: String = BrowserServer.localIPAddress() ?? "localhost"
+    @State private var showAdvanced: Bool = false
+
+    private var browserTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Scan the QR code or open the URL with your iPhone, Android or TV browser on the same Wi-Fi network.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            Toggle(isOn: $settings.browserServerEnabled) {
+                Text("Enable Remote Connection")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            if settings.browserServerEnabled {
+                Divider()
+
+                let url = "http://\(localIP):\(settings.browserServerPort)"
+
+                if let qrImage = generateQRCode(from: url) {
+                    HStack {
+                        Spacer()
+                        Image(nsImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 120, height: 120)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Spacer()
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Text(url)
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.accentColor)
+                        .textSelection(.enabled)
+
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.accentColor.opacity(0.08))
+                )
+
+                DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Port")
+                                .font(.system(size: 13, weight: .medium))
+                            HStack(spacing: 8) {
+                                TextField("Port", text: Binding(
+                                    get: { String(settings.browserServerPort) },
+                                    set: { str in
+                                        if let val = UInt16(str), val >= 1024 {
+                                            settings.browserServerPort = val
+                                        }
+                                    }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+
+                                Text("Restart required after change")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+
+                                Spacer()
+
+                                Button("Restart") {
+                                    TextreamService.shared.browserServer.stop()
+                                    TextreamService.shared.browserServer.start()
+                                    localIP = BrowserServer.localIPAddress() ?? "localhost"
+                                }
+                                .controlSize(.small)
+                                .buttonStyle(.bordered)
+                            }
+                        }
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            Text("Uses ports \(String(settings.browserServerPort)) (HTTP) and \(String(settings.browserServerPort + 1)) (WebSocket).")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .onAppear { localIP = BrowserServer.localIPAddress() ?? "localhost" }
+    }
+
     // MARK: - Shared Components
 
     private func displayPicker(
@@ -993,6 +1111,20 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - QR Code
+
+    private func generateQRCode(from string: String) -> NSImage? {
+        let context = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(string.utf8)
+        filter.correctionLevel = "M"
+        guard let ciImage = filter.outputImage else { return nil }
+        let scale = 10.0
+        let scaled = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: scaled.extent.width, height: scaled.extent.height))
+    }
+
     // MARK: - Helpers
 
     private func resetAllSettings() {
@@ -1017,6 +1149,8 @@ struct SettingsView: View {
         settings.selectedMicUID = ""
         settings.autoNextPage = false
         settings.autoNextPageDelay = 3
+        settings.browserServerEnabled = false
+        settings.browserServerPort = 7373
     }
 
     private func refreshScreens() {

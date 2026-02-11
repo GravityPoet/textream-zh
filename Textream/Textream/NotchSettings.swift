@@ -115,6 +115,17 @@ enum FontColorPreset: String, CaseIterable, Identifiable {
         case .orange: return "Orange"
         }
     }
+
+    var cssColor: String {
+        switch self {
+        case .white:  return "#ffffff"
+        case .yellow: return "rgb(255,214,10)"
+        case .green:  return "rgb(51,214,74)"
+        case .blue:   return "rgb(79,140,255)"
+        case .pink:   return "rgb(255,97,145)"
+        case .orange: return "rgb(255,158,10)"
+        }
+    }
 }
 
 // MARK: - Overlay Mode
@@ -363,6 +374,17 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(Int(fullscreenScreenID), forKey: "fullscreenScreenID") }
     }
 
+    var browserServerEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(browserServerEnabled, forKey: "browserServerEnabled")
+            TextreamService.shared.updateBrowserServer()
+        }
+    }
+
+    var browserServerPort: UInt16 {
+        didSet { UserDefaults.standard.set(Int(browserServerPort), forKey: "browserServerPort") }
+    }
+
     var font: NSFont {
         fontFamilyPreset.font(size: fontSizePreset.pointSize)
     }
@@ -408,5 +430,8 @@ class NotchSettings {
         self.autoNextPageDelay = savedDelay > 0 ? savedDelay : 3
         let savedFullscreenScreenID = UserDefaults.standard.integer(forKey: "fullscreenScreenID")
         self.fullscreenScreenID = UInt32(savedFullscreenScreenID)
+        self.browserServerEnabled = UserDefaults.standard.object(forKey: "browserServerEnabled") as? Bool ?? false
+        let savedPort = UserDefaults.standard.integer(forKey: "browserServerPort")
+        self.browserServerPort = savedPort > 0 ? UInt16(savedPort) : 7373
     }
 }

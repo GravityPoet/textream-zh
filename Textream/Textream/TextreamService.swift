@@ -14,6 +14,7 @@ class TextreamService: NSObject, ObservableObject {
     static let shared = TextreamService()
     let overlayController = NotchOverlayController()
     let externalDisplayController = ExternalDisplayController()
+    let browserServer = BrowserServer()
     var onOverlayDismissed: (() -> Void)?
     var launchedExternally = false
 
@@ -44,6 +45,7 @@ class TextreamService: NSObject, ObservableObject {
 
         overlayController.show(text: trimmed, hasNextPage: hasNextPage) { [weak self] in
             self?.externalDisplayController.dismiss()
+            self?.browserServer.hideContent()
             self?.onOverlayDismissed?()
         }
         updatePageInfo()
@@ -60,6 +62,15 @@ class TextreamService: NSObject, ObservableObject {
             totalCharCount: totalCharCount,
             hasNextPage: hasNextPage
         )
+
+        if browserServer.isRunning {
+            browserServer.showContent(
+                speechRecognizer: overlayController.speechRecognizer,
+                words: words,
+                totalCharCount: totalCharCount,
+                hasNextPage: hasNextPage
+            )
+        }
     }
 
     func readCurrentPage() {
@@ -109,6 +120,14 @@ class TextreamService: NSObject, ObservableObject {
         externalDisplayController.overlayContent.words = normalized
         externalDisplayController.overlayContent.totalCharCount = normalized.joined(separator: " ").count
         externalDisplayController.overlayContent.hasNextPage = hasNextPage
+
+        if browserServer.isRunning {
+            browserServer.updateContent(
+                words: normalized,
+                totalCharCount: normalized.joined(separator: " ").count,
+                hasNextPage: hasNextPage
+            )
+        }
 
         // Unmute after new page content is loaded
         if wasListening {
@@ -281,6 +300,18 @@ class TextreamService: NSObject, ObservableObject {
             alert.messageText = "Failed to open file"
             alert.informativeText = error.localizedDescription
             alert.runModal()
+        }
+    }
+
+    // MARK: - Browser Server
+
+    func updateBrowserServer() {
+        if NotchSettings.shared.browserServerEnabled {
+            if !browserServer.isRunning {
+                browserServer.start()
+            }
+        } else {
+            browserServer.stop()
         }
     }
 

@@ -38,6 +38,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Silent update check on launch
         UpdateChecker.shared.checkForUpdates(silent: true)
 
+        // Start browser server if enabled
+        TextreamService.shared.updateBrowserServer()
+
         // Set window delegate to intercept close, disable tabs and fullscreen
         DispatchQueue.main.async {
             for window in NSApp.windows where !(window is NSPanel) {
