@@ -351,7 +351,7 @@ class NotchOverlayController: NSObject {
 
         let panel = NSPanel(
             contentRect: NSRect(x: xPosition, y: yPosition, width: panelWidth, height: panelHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -362,6 +362,8 @@ class NotchOverlayController: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.ignoresMouseEvents = false
         panel.isMovableByWindowBackground = true
+        panel.minSize = NSSize(width: 280, height: panelHeight)
+        panel.maxSize = NSSize(width: 500, height: panelHeight + 350)
         panel.sharingType = NotchSettings.shared.hideFromScreenShare ? .none : .readOnly
         panel.contentView = contentView
 
