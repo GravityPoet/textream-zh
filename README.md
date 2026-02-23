@@ -39,7 +39,7 @@ Xcode 中 `⌘R` 运行，或使用 `xcodebuild` 进行 Release 构建。
 
 ## 合规与归属
 
-本仓库是衍生项目，不是原作者官方仓库。请阅读 [NOTICE](./NOTICE)。
+本仓库是衍生项目。请阅读 [NOTICE](./NOTICE)。
 
 - 上游项目：`https://github.com/f/textream`
 - 上游 README 在 **2026-02-24** 标注为 MIT
