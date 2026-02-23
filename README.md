@@ -1,8 +1,20 @@
-# Textream 中文增强版（非官方）
+<p align="center">
+  <img src="Textream/Textream/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="128" height="128" alt="Textream icon">
+</p>
 
-基于开源项目 [f/textream](https://github.com/f/textream) 的中文增强版本，面向中文演讲/录制场景做了本地化与识别能力扩展。
+<h1 align="center">Textream 中文增强版（非官方）</h1>
 
-* [English Version](README.en.md)
+<p align="center">
+  基于开源项目 <a href="https://github.com/f/textream">f/textream</a> 的中文增强版本，面向中文演讲/录制场景做了本地化与识别能力扩展。<br>
+</p>
+
+<p align="center">
+  <a href="README.en.md">English Version</a> · <a href="NOTICE">Attribution & Notice</a>
+</p>
+
+<p align="center">
+  <img src="docs/video.gif" width="600" alt="Textream demo">
+</p>
 
 ## 主要改动
 
