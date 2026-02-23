@@ -10,6 +10,7 @@ import AppKit
 import Speech
 import Combine
 import CoreImage.CIFilterBuiltins
+import UniformTypeIdentifiers
 
 // MARK: - Preview Panel Controller
 
@@ -269,11 +270,11 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .appearance: return "Appearance"
-        case .guidance:   return "Guidance"
-        case .teleprompter: return "Teleprompter"
-        case .external:   return "External"
-        case .browser:    return "Remote"
+        case .appearance: return "外观"
+        case .guidance:   return "引导"
+        case .teleprompter: return "提词器"
+        case .external:   return "外接屏"
+        case .browser:    return "远程"
         }
     }
 
@@ -296,12 +297,13 @@ struct SettingsView: View {
     @State private var previewController = NotchPreviewController()
     @State private var selectedTab: SettingsTab = .appearance
     @State private var showResetConfirmation = false
+    @State private var showAppearancePreview = false
 
     var body: some View {
         HStack(spacing: 0) {
             // Sidebar
             VStack(alignment: .leading, spacing: 2) {
-                Text("Settings")
+                Text("设置")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
@@ -356,7 +358,7 @@ struct SettingsView: View {
                 Divider()
 
                 HStack {
-                    Button("Reset All") {
+                    Button("全部重置") {
                         showResetConfirmation = true
                     }
                     .buttonStyle(.borderless)
@@ -365,7 +367,7 @@ struct SettingsView: View {
 
                     Spacer()
 
-                    Button("Done") {
+                    Button("完成") {
                         dismiss()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -379,60 +381,53 @@ struct SettingsView: View {
         .frame(width: 500)
         .frame(minHeight: 280, maxHeight: 500)
         .background(.ultraThinMaterial)
-        .alert("Reset All Settings?", isPresented: $showResetConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
+        .alert("重置所有设置？", isPresented: $showResetConfirmation) {
+            Button("取消", role: .cancel) { }
+            Button("重置", role: .destructive) {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     resetAllSettings()
                 }
             }
         } message: {
-            Text("This will restore all settings to their defaults.")
+            Text("这将把所有设置恢复为默认值。")
         }
         .onAppear {
-            if settings.overlayMode != .fullscreen {
-                previewController.show(settings: settings)
-                if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        previewController.animateToCursor(settings: settings)
-                    }
-                }
-            }
+            updatePreviewPanelVisibility()
         }
         .onDisappear {
             previewController.dismiss()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-            previewController.hide()
+            if shouldShowAppearancePreview {
+                previewController.hide()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            if settings.overlayMode != .fullscreen {
-                previewController.show(settings: settings)
-                if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        previewController.animateToCursor(settings: settings)
-                    }
-                }
-            }
+            updatePreviewPanelVisibility()
         }
-        .onChange(of: settings.followCursorWhenUndocked) { _, follow in
-            if follow && settings.overlayMode == .floating {
+        .onChange(of: settings.followCursorWhenUndocked) { _, _ in updatePreviewPanelVisibility() }
+        .onChange(of: settings.overlayMode) { _, _ in updatePreviewPanelVisibility() }
+        .onChange(of: selectedTab) { _, _ in updatePreviewPanelVisibility() }
+        .onChange(of: showAppearancePreview) { _, _ in updatePreviewPanelVisibility() }
+    }
+
+    private var shouldShowAppearancePreview: Bool {
+        showAppearancePreview && selectedTab == .appearance && settings.overlayMode != .fullscreen
+    }
+
+    private func updatePreviewPanelVisibility() {
+        guard shouldShowAppearancePreview else {
+            previewController.dismiss()
+            return
+        }
+
+        previewController.show(settings: settings)
+        if settings.followCursorWhenUndocked && settings.overlayMode == .floating {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 previewController.animateToCursor(settings: settings)
-            } else {
-                previewController.animateFromCursor()
             }
-        }
-        .onChange(of: settings.overlayMode) { _, mode in
-            if mode == .fullscreen {
-                previewController.hide()
-            } else {
-                previewController.show(settings: settings)
-                if mode == .floating && settings.followCursorWhenUndocked {
-                    previewController.animateToCursor(settings: settings)
-                } else if previewController.isAtCursor {
-                    previewController.animateFromCursor()
-                }
-            }
+        } else if previewController.isAtCursor {
+            previewController.animateFromCursor()
         }
     }
 
@@ -441,8 +436,15 @@ struct SettingsView: View {
     private var appearanceTab: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
+                Toggle(isOn: $showAppearancePreview) {
+                    Text("实时预览（额外窗口）")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
                 // Font Family
-                Text("Font")
+                Text("字体")
                     .font(.system(size: 13, weight: .medium))
 
                 HStack(spacing: 8) {
@@ -476,7 +478,7 @@ struct SettingsView: View {
                 }
 
                 // Text Size
-                Text("Size")
+                Text("字号")
                     .font(.system(size: 13, weight: .medium))
 
                 HStack(spacing: 8) {
@@ -512,7 +514,7 @@ struct SettingsView: View {
                 Divider()
 
                 // Highlight Color
-                Text("Highlight Color")
+                Text("高亮颜色")
                     .font(.system(size: 13, weight: .medium))
 
                 HStack(spacing: 8) {
@@ -559,13 +561,13 @@ struct SettingsView: View {
                 Divider()
 
                 // Dimensions
-                Text("Dimensions")
+                Text("尺寸")
                     .font(.system(size: 13, weight: .medium))
 
                 VStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text("Width")
+                            Text("宽度")
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -582,7 +584,7 @@ struct SettingsView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text("Height")
+                            Text("高度")
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -605,87 +607,236 @@ struct SettingsView: View {
     // MARK: - Guidance Tab
 
     private var guidanceTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Picker("", selection: $settings.listeningMode) {
-                ForEach(ListeningMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Text(settings.listeningMode.description)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            if settings.listeningMode == .wordTracking {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Speech Language")
-                        .font(.system(size: 13, weight: .medium))
-                    Picker("", selection: $settings.speechLocale) {
-                        ForEach(SFSpeechRecognizer.supportedLocales().sorted(by: { $0.identifier < $1.identifier }), id: \.identifier) { locale in
-                            Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                                .tag(locale.identifier)
-                        }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                Picker("", selection: $settings.listeningMode) {
+                    ForEach(ListeningMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
                     }
-                    .labelsHidden()
                 }
-            }
+                .pickerStyle(.segmented)
+                .labelsHidden()
 
-            if settings.listeningMode != .classic {
-                Divider()
+                Text(settings.listeningMode.description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Microphone")
-                        .font(.system(size: 13, weight: .medium))
-                    Picker("", selection: $settings.selectedMicUID) {
-                        Text("System Default").tag("")
-                        ForEach(availableMics) { mic in
-                            Text(mic.name).tag(mic.uid)
-                        }
-                    }
-                    .labelsHidden()
-                }
-            }
+                if settings.listeningMode == .wordTracking {
+                    Divider()
 
-            if settings.listeningMode != .wordTracking {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Scroll Speed")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("识别引擎")
                             .font(.system(size: 13, weight: .medium))
-                        Spacer()
-                        Text(String(format: "%.1f words/s", settings.scrollSpeed))
-                            .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        Picker("", selection: $settings.speechEngineMode) {
+                            ForEach(SpeechEngineMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+
+                        Text(settings.speechEngineMode.description)
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
-                    Slider(
-                        value: $settings.scrollSpeed,
-                        in: 0.5...8,
-                        step: 0.5
-                    )
-                    HStack {
-                        Text("Slower")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                        Spacer()
-                        Text("Faster")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
+
+                    if settings.speechEngineMode == .apple {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("语音语言")
+                                .font(.system(size: 13, weight: .medium))
+                            Picker("", selection: $settings.speechLocale) {
+                                ForEach(SFSpeechRecognizer.supportedLocales().sorted(by: { $0.identifier < $1.identifier }), id: \.identifier) { locale in
+                                    Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                                        .tag(locale.identifier)
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                    } else {
+                        localSenseVoiceConfigSection
                     }
                 }
-            }
 
-            Spacer()
+                if settings.listeningMode != .classic {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("麦克风")
+                            .font(.system(size: 13, weight: .medium))
+                        Picker("", selection: $settings.selectedMicUID) {
+                            Text("系统默认").tag("")
+                            ForEach(availableMics) { mic in
+                                Text(mic.name).tag(mic.uid)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                }
+
+                if settings.listeningMode != .wordTracking {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("滚动速度")
+                                .font(.system(size: 13, weight: .medium))
+                            Spacer()
+                            Text(String(format: "%.1f 词/秒", settings.scrollSpeed))
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(
+                            value: $settings.scrollSpeed,
+                            in: 0.5...8,
+                            step: 0.5
+                        )
+                        HStack {
+                            Text("更慢")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            Text("更快")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
         .onAppear { availableMics = AudioInputDevice.allInputDevices() }
     }
 
     @State private var availableMics: [AudioInputDevice] = []
+
+    // MARK: - Local SenseVoice
+
+    private let localSenseVoiceLanguages: [(id: String, label: String)] = [
+        ("auto", "自动"),
+        ("zh", "中文（普通话）"),
+        ("yue", "粤语"),
+        ("en", "英语"),
+        ("ja", "日语"),
+        ("ko", "韩语"),
+    ]
+
+    private var localSenseVoiceConfigSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+
+            Text("本地模型（SenseVoice）")
+                .font(.system(size: 13, weight: .medium))
+
+            localPathRow(
+                title: "识别程序",
+                path: settings.localSenseVoiceExecutablePath,
+                placeholder: "未导入（请选择 sense-voice-stream）"
+            )
+
+            Button("导入识别程序") {
+                importSenseVoiceExecutable()
+            }
+            .controlSize(.small)
+
+            localPathRow(
+                title: "模型文件",
+                path: settings.localSenseVoiceModelPath,
+                placeholder: "未导入（请选择 .gguf 模型）"
+            )
+
+            Button("导入模型文件") {
+                importSenseVoiceModel()
+            }
+            .controlSize(.small)
+
+            HStack(spacing: 8) {
+                Text("语言")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $settings.localSenseVoiceLanguage) {
+                    ForEach(localSenseVoiceLanguages, id: \.id) { lang in
+                        Text(lang.label).tag(lang.id)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+
+            Toggle(isOn: $settings.localSenseVoiceDisableGPU) {
+                Text("兼容模式（禁用 GPU）")
+                    .font(.system(size: 12))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            HStack(spacing: 6) {
+                Image(systemName: localSenseVoiceStatus.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(localSenseVoiceStatus.isReady ? .green : .orange)
+                Text(localSenseVoiceStatus.message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 2)
+
+            Button("尝试自动填充默认路径") {
+                autofillSenseVoicePaths()
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 11, weight: .medium))
+        }
+    }
+
+    private func localPathRow(title: String, path: String, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text(path.isEmpty ? placeholder : path)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(path.isEmpty ? .tertiary : .primary)
+                .lineLimit(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+        }
+    }
+
+    private var localSenseVoiceStatus: (isReady: Bool, message: String) {
+        let fileManager = FileManager.default
+
+        guard !settings.localSenseVoiceExecutablePath.isEmpty else {
+            return (false, "请先导入识别程序（sense-voice-stream）。")
+        }
+        guard fileManager.fileExists(atPath: settings.localSenseVoiceExecutablePath) else {
+            return (false, "识别程序路径不存在，请重新导入。")
+        }
+        let executableName = URL(fileURLWithPath: settings.localSenseVoiceExecutablePath).lastPathComponent.lowercased()
+        guard executableName.contains("sense-voice-stream") else {
+            return (false, "请导入 sense-voice-stream（实时识别版本）。")
+        }
+        guard fileManager.isExecutableFile(atPath: settings.localSenseVoiceExecutablePath) else {
+            return (false, "识别程序没有执行权限，请执行 chmod +x 后重试。")
+        }
+
+        guard !settings.localSenseVoiceModelPath.isEmpty else {
+            return (false, "请导入模型文件（.gguf）。")
+        }
+        guard fileManager.fileExists(atPath: settings.localSenseVoiceModelPath) else {
+            return (false, "模型路径不存在，请重新导入。")
+        }
+
+        return (true, "本地模型配置可用，可直接开始逐词跟踪。")
+    }
 
     // MARK: - Teleprompter Tab
 
@@ -710,7 +861,7 @@ struct SettingsView: View {
                 if settings.overlayMode == .pinned {
                     Divider()
 
-                    Text("Display")
+                    Text("显示器")
                         .font(.system(size: 13, weight: .medium))
 
                     Picker("", selection: $settings.notchDisplayMode) {
@@ -738,20 +889,20 @@ struct SettingsView: View {
                     Divider()
 
                     Toggle(isOn: $settings.followCursorWhenUndocked) {
-                        Text("Follow Cursor")
+                        Text("跟随光标")
                             .font(.system(size: 13, weight: .medium))
                     }
                     .toggleStyle(.switch)
                     .controlSize(.small)
 
-                    Text("The window follows your cursor and sticks to its bottom-right.")
+                    Text("窗口会跟随光标，并固定在其右下方。")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
                     Divider()
 
                     Toggle(isOn: $settings.floatingGlassEffect) {
-                        Text("Glass Effect")
+                        Text("玻璃效果")
                             .font(.system(size: 13, weight: .medium))
                     }
                     .toggleStyle(.switch)
@@ -760,7 +911,7 @@ struct SettingsView: View {
                     if settings.floatingGlassEffect {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("Opacity")
+                                Text("透明度")
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                 Spacer()
@@ -780,7 +931,7 @@ struct SettingsView: View {
                 if settings.overlayMode == .fullscreen {
                     Divider()
 
-                    Text("Display")
+                    Text("显示器")
                         .font(.system(size: 13, weight: .medium))
 
                     displayPicker(
@@ -793,7 +944,7 @@ struct SettingsView: View {
                         Image(systemName: "escape")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
-                        Text("Press Esc to stop the teleprompter.")
+                        Text("按 Esc 停止提词器。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -810,9 +961,9 @@ struct SettingsView: View {
                 // Options
                 Toggle(isOn: $settings.showElapsedTime) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Elapsed Time")
+                        Text("运行计时")
                             .font(.system(size: 13, weight: .medium))
-                        Text("Display a running timer while the teleprompter is active.")
+                        Text("提词器运行时显示计时器。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -821,9 +972,9 @@ struct SettingsView: View {
 
                 Toggle(isOn: $settings.hideFromScreenShare) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Hide from Screen Sharing")
+                        Text("在屏幕共享中隐藏")
                             .font(.system(size: 13, weight: .medium))
-                        Text("Hide the overlay from screen recordings and video calls.")
+                        Text("在录屏和视频会议中隐藏悬浮层。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -833,14 +984,14 @@ struct SettingsView: View {
                 Divider()
 
                 // Pagination
-                Text("Pagination")
+                Text("分页")
                     .font(.system(size: 13, weight: .semibold))
 
                 Toggle(isOn: $settings.autoNextPage) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Auto Next Page")
+                        Text("自动翻页")
                             .font(.system(size: 13, weight: .medium))
-                        Text("Automatically advance to the next page after a countdown.")
+                        Text("倒计时结束后自动翻到下一页。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -849,12 +1000,12 @@ struct SettingsView: View {
 
                 if settings.autoNextPage {
                     HStack {
-                        Text("Countdown")
+                        Text("倒计时")
                             .font(.system(size: 13))
                         Spacer()
                         Picker("", selection: $settings.autoNextPageDelay) {
-                            Text("3 seconds").tag(3)
-                            Text("5 seconds").tag(5)
+                            Text("3 秒").tag(3)
+                            Text("5 秒").tag(5)
                         }
                         .pickerStyle(.segmented)
                         .frame(width: 160)
@@ -872,7 +1023,7 @@ struct SettingsView: View {
 
     private var externalTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Show the teleprompter on an external display or Sidecar iPad.")
+            Text("在外接显示器或 Sidecar iPad 上显示提词器。")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
@@ -891,7 +1042,7 @@ struct SettingsView: View {
             if settings.externalDisplayMode == .mirror {
                 Divider()
 
-                Text("Mirror Axis")
+                Text("镜像方向")
                     .font(.system(size: 13, weight: .medium))
 
                 Picker("", selection: $settings.mirrorAxis) {
@@ -910,14 +1061,14 @@ struct SettingsView: View {
             if settings.externalDisplayMode != .off {
                 Divider()
 
-                Text("Target Display")
+                Text("目标显示器")
                     .font(.system(size: 13, weight: .medium))
 
                 displayPicker(
                     screens: availableScreens,
                     selectedID: $settings.externalScreenID,
                     onRefresh: { refreshScreens() },
-                    emptyMessage: "No external displays detected. Connect a display or enable Sidecar."
+                    emptyMessage: "未检测到外接显示器。请连接显示器或启用 Sidecar。"
                 )
             }
             Spacer()
@@ -933,12 +1084,12 @@ struct SettingsView: View {
 
     private var browserTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Scan the QR code or open the URL with your iPhone, Android or TV browser on the same Wi-Fi network.")
+            Text("在同一 Wi-Fi 下，使用 iPhone、Android 或电视浏览器扫码或打开该 URL。")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
             Toggle(isOn: $settings.browserServerEnabled) {
-                Text("Enable Remote Connection")
+                Text("启用远程连接")
                     .font(.system(size: 13, weight: .medium))
             }
             .toggleStyle(.switch)
@@ -985,13 +1136,13 @@ struct SettingsView: View {
                         .fill(Color.accentColor.opacity(0.08))
                 )
 
-                DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                DisclosureGroup("高级设置", isExpanded: $showAdvanced) {
                     VStack(alignment: .leading, spacing: 10) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Port")
+                            Text("端口")
                                 .font(.system(size: 13, weight: .medium))
                             HStack(spacing: 8) {
-                                TextField("Port", text: Binding(
+                                TextField("端口", text: Binding(
                                     get: { String(settings.browserServerPort) },
                                     set: { str in
                                         if let val = UInt16(str), val >= 1024 {
@@ -1002,13 +1153,13 @@ struct SettingsView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
 
-                                Text("Restart required after change")
+                                Text("更改后需要重启")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.tertiary)
 
                                 Spacer()
 
-                                Button("Restart") {
+                                Button("重启") {
                                     TextreamService.shared.browserServer.stop()
                                     TextreamService.shared.browserServer.start()
                                     localIP = BrowserServer.localIPAddress() ?? "localhost"
@@ -1022,7 +1173,7 @@ struct SettingsView: View {
                             Image(systemName: "info.circle")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
-                            Text("Uses ports \(String(settings.browserServerPort)) (HTTP) and \(String(settings.browserServerPort + 1)) (WebSocket).")
+                            Text("使用端口 \(String(settings.browserServerPort))（HTTP）和 \(String(settings.browserServerPort + 1))（WebSocket）。")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
@@ -1102,7 +1253,7 @@ struct SettingsView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Refresh")
+                    Text("刷新")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(.secondary)
@@ -1123,6 +1274,94 @@ struct SettingsView: View {
         let scaled = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
         return NSImage(cgImage: cgImage, size: NSSize(width: scaled.extent.width, height: scaled.extent.height))
+    }
+
+    private func importSenseVoiceExecutable() {
+        let panel = NSOpenPanel()
+        panel.message = "选择 SenseVoice 的识别程序（sense-voice-stream）"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "导入"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            let path = url.path
+            let fileName = url.lastPathComponent.lowercased()
+            guard fileName.contains("sense-voice-stream") else {
+                showLocalImportWarning("请选择 `sense-voice-stream` 可执行文件，不要选择视频或其他文件。")
+                return
+            }
+
+            let fileManager = FileManager.default
+            if !fileManager.isExecutableFile(atPath: path) {
+                do {
+                    try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: path)
+                } catch {
+                    // keep old state and report in a user-facing alert
+                }
+            }
+
+            guard fileManager.isExecutableFile(atPath: path) else {
+                showLocalImportWarning("该文件没有可执行权限，请先执行 `chmod +x \"\(path)\"`。")
+                return
+            }
+
+            settings.localSenseVoiceExecutablePath = path
+        }
+    }
+
+    private func showLocalImportWarning(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "导入失败"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "确定")
+        alert.runModal()
+    }
+
+    private func importSenseVoiceModel() {
+        let panel = NSOpenPanel()
+        panel.message = "选择 SenseVoice 模型文件（.gguf）"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        var types: [UTType] = []
+        if let gguf = UTType(filenameExtension: "gguf") {
+            types.append(gguf)
+        }
+        if let bin = UTType(filenameExtension: "bin") {
+            types.append(bin)
+        }
+        if !types.isEmpty {
+            panel.allowedContentTypes = types
+        }
+        panel.prompt = "导入"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.localSenseVoiceModelPath = url.path
+        }
+    }
+
+    private func autofillSenseVoicePaths() {
+        let fileManager = FileManager.default
+        let home = NSHomeDirectory()
+
+        let executableCandidates = [
+            "\(home)/Tools/本地语音大模型/SenseVoice.cpp/build/bin/sense-voice-stream",
+        ]
+        if let executablePath = executableCandidates.first(where: { fileManager.isExecutableFile(atPath: $0) }) {
+            settings.localSenseVoiceExecutablePath = executablePath
+        }
+
+        let modelRoot = "\(home)/Tools/本地语音大模型/sensevoice-models"
+        if let items = try? fileManager.contentsOfDirectory(atPath: modelRoot) {
+            let models = items
+                .filter { $0.lowercased().hasSuffix(".gguf") || $0.lowercased().hasSuffix(".bin") }
+                .sorted()
+            if let firstModel = models.first {
+                settings.localSenseVoiceModelPath = "\(modelRoot)/\(firstModel)"
+            }
+        }
     }
 
     // MARK: - Helpers
@@ -1147,6 +1386,11 @@ struct SettingsView: View {
         settings.scrollSpeed = 3
         settings.showElapsedTime = true
         settings.selectedMicUID = ""
+        settings.speechEngineMode = .apple
+        settings.localSenseVoiceExecutablePath = ""
+        settings.localSenseVoiceModelPath = ""
+        settings.localSenseVoiceLanguage = "zh"
+        settings.localSenseVoiceDisableGPU = false
         settings.autoNextPage = false
         settings.autoNextPageDelay = 3
         settings.browserServerEnabled = false

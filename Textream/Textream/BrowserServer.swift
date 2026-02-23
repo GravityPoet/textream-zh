@@ -289,7 +289,7 @@ class BrowserServer {
     static func generateHTML(wsPort: UInt16) -> String {
         """
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="zh-CN">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
@@ -376,9 +376,9 @@ class BrowserServer {
 
         <div id="waiting">
           <div class="icon">📡</div>
-          <div class="title">Waiting for Textream…</div>
-          <div class="sub">Start reading in the app to see your teleprompter here</div>
-          <div class="url" id="conn-status">Connecting…</div>
+          <div class="title">等待 Textream 连接…</div>
+          <div class="sub">在应用中开始朗读后，这里会显示提词器</div>
+          <div class="url" id="conn-status">连接中…</div>
         </div>
 
         <div id="main">
@@ -394,7 +394,7 @@ class BrowserServer {
 
         <div id="done">
           <div class="check">✓</div>
-          <div class="label">Done!</div>
+          <div class="label">完成！</div>
         </div>
 
         <script>
@@ -433,10 +433,10 @@ class BrowserServer {
         function connect(){
           ws=new WebSocket('ws://'+host+':'+WSP);
           ws.onopen=()=>{clearTimeout(rt);
-            document.getElementById('conn-status').textContent='Connected';};
+            document.getElementById('conn-status').textContent='已连接';};
           ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch(x){console.error(x)}};
           ws.onclose=()=>{
-            document.getElementById('conn-status').textContent='Reconnecting…';
+            document.getElementById('conn-status').textContent='重连中…';
             rt=setTimeout(connect,1500);};
           ws.onerror=()=>{ws.close()};
         }

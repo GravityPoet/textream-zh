@@ -175,7 +175,7 @@ class TextreamService: NSObject, ObservableObject {
     func saveFileAs() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "textream")!]
-        panel.nameFieldStringValue = "Untitled.textream"
+        panel.nameFieldStringValue = "未命名.textream"
         panel.canCreateDirectories = true
 
         panel.begin { [weak self] response in
@@ -193,7 +193,7 @@ class TextreamService: NSObject, ObservableObject {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Failed to save file"
+            alert.messageText = "保存文件失败"
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
@@ -220,8 +220,8 @@ class TextreamService: NSObject, ObservableObject {
             let ext = url.pathExtension.lowercased()
             if ext == "key" {
                 let alert = NSAlert()
-                alert.messageText = "Keynote files can't be imported directly"
-                alert.informativeText = "Please export your Keynote presentation as PowerPoint (.pptx) first:\n\nIn Keynote: File → Export To → PowerPoint"
+                alert.messageText = "Keynote 文件无法直接导入"
+                alert.informativeText = "请先将 Keynote 演示文稿导出为 PowerPoint（.pptx）：\n\n在 Keynote 中：文件 → 导出到 → PowerPoint"
                 alert.alertStyle = .informational
                 alert.runModal()
             } else if ext == "pptx" {
@@ -246,7 +246,7 @@ class TextreamService: NSObject, ObservableObject {
             } catch {
                 DispatchQueue.main.async {
                     let alert = NSAlert()
-                    alert.messageText = "Import Error"
+                    alert.messageText = "导入错误"
                     alert.informativeText = error.localizedDescription
                     alert.runModal()
                 }
@@ -260,11 +260,11 @@ class TextreamService: NSObject, ObservableObject {
         guard hasUnsavedChanges else { return true }
 
         let alert = NSAlert()
-        alert.messageText = "You have unsaved changes"
-        alert.informativeText = "Do you want to save your changes before opening another file?"
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "你有未保存的更改"
+        alert.informativeText = "打开其他文件前，是否先保存当前更改？"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
         alert.alertStyle = .warning
 
         let response = alert.runModal()
@@ -292,7 +292,7 @@ class TextreamService: NSObject, ObservableObject {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Failed to open file"
+            alert.messageText = "打开文件失败"
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
@@ -313,7 +313,7 @@ class TextreamService: NSObject, ObservableObject {
     // macOS Services handler
     @objc func readInTextream(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
         guard let text = pboard.string(forType: .string) else {
-            error.pointee = "No text found on pasteboard" as NSString
+            error.pointee = "剪贴板中未找到文本" as NSString
             return
         }
         readText(text)

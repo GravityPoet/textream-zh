@@ -17,6 +17,10 @@
 </p>
 
 <p align="center">
+  <a href="README.zh-CN.md">简体中文介绍</a> · <a href="NOTICE">Attribution & Notice</a>
+</p>
+
+<p align="center">
   <img src="docs/video.gif" width="600" alt="Textream demo">
 </p>
 

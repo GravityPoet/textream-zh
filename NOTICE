@@ -1,0 +1,26 @@
+Attribution and Notice
+======================
+
+This repository is a derivative work based on:
+
+- Upstream project: https://github.com/f/textream
+- Upstream maintainer: Fatih Kadir Akin (https://fka.dev)
+- Original idea credit (as stated by upstream): Semih Kislar (https://x.com/semihdev)
+
+What this repository adds:
+
+- Chinese localization and UX copy adaptation
+- Local speech model integration workflow (SenseVoice)
+- Matching stability improvements for repeated Chinese text
+
+License/source note:
+
+- Upstream README states the project is "MIT" (checked on 2026-02-24).
+- At that check time, upstream repository did not expose a standalone LICENSE file via GitHub license API.
+- This repository does not override upstream licensing claims and keeps attribution visible.
+- If upstream publishes or updates LICENSE/NOTICE terms, this repository should align accordingly.
+
+Trademark/affiliation:
+
+- This is a community-maintained derivative and is not an official release from upstream maintainers.
+

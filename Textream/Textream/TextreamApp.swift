@@ -127,41 +127,41 @@ struct TextreamApp: App {
 
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About Textream") {
+                Button("关于 Textream") {
                     NotificationCenter.default.post(name: .openAbout, object: nil)
                 }
                 Divider()
-                Button("Check for Updates…") {
+                Button("检查更新…") {
                     UpdateChecker.shared.checkForUpdates()
                 }
             }
             CommandGroup(after: .appSettings) {
-                Button("Settings…") {
+                Button("设置…") {
                     NotificationCenter.default.post(name: .openSettings, object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
             CommandGroup(replacing: .newItem) {
-                Button("Open…") {
+                Button("打开…") {
                     TextreamService.shared.openFile()
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
                 Divider()
 
-                Button("Save") {
+                Button("保存") {
                     TextreamService.shared.saveFile()
                 }
                 .keyboardShortcut("s", modifiers: .command)
 
-                Button("Save As…") {
+                Button("另存为…") {
                     TextreamService.shared.saveFileAs()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .windowArrangement) { }
             CommandGroup(replacing: .help) {
-                Button("Textream Help") {
+                Button("Textream 帮助") {
                     if let url = URL(string: "https://github.com/f/textream") {
                         NSWorkspace.shared.open(url)
                     }

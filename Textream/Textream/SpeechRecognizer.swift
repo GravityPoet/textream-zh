@@ -94,6 +94,8 @@ class SpeechRecognizer {
     private var audioEngine = AVAudioEngine()
     private var sourceText: String = ""
     private var normalizedSource: String = ""
+    private var compactSourceCharacters: [Character] = []
+    private var compactSourceToOriginalOffset: [Int] = []
     private var matchStartOffset: Int = 0  // char offset to start matching from
     private var retryCount: Int = 0
     private let maxRetries: Int = 10
@@ -101,12 +103,25 @@ class SpeechRecognizer {
     private var pendingRestart: DispatchWorkItem?
     private var sessionGeneration: Int = 0
     private var suppressConfigChange: Bool = false
+    private var requiresTranscription: Bool = true
+    private var transcriptionBackend: TranscriptionBackend = .none
+    private var localSenseVoiceRunner: LocalSenseVoiceRunner?
+    private var pendingAnchorJumpTarget: Int?
+    private var pendingAnchorJumpHits: Int = 0
+    private var pendingAnchorJumpTimestamp: TimeInterval = 0
+
+    private enum TranscriptionBackend {
+        case none
+        case appleSpeech
+        case localSenseVoice
+    }
 
     /// Jump highlight to a specific char offset (e.g. when user taps a word)
     func jumpTo(charOffset: Int) {
         recognizedCharCount = charOffset
         matchStartOffset = charOffset
         retryCount = 0
+        resetPendingAnchorJumpConfirmation()
         if isListening {
             restartRecognition()
         }
@@ -121,25 +136,38 @@ class SpeechRecognizer {
         let collapsed = words.joined(separator: " ")
         sourceText = collapsed
         normalizedSource = Self.normalize(collapsed)
+        rebuildCompactSourceIndex()
         recognizedCharCount = 0
         matchStartOffset = 0
         retryCount = 0
+        resetPendingAnchorJumpConfirmation()
         error = nil
         sessionGeneration += 1
+        let settings = NotchSettings.shared
+        requiresTranscription = settings.listeningMode == .wordTracking
+        if requiresTranscription {
+            transcriptionBackend = settings.speechEngineMode == .localSenseVoice ? .localSenseVoice : .appleSpeech
+        } else {
+            transcriptionBackend = .none
+        }
 
         // Check microphone permission first
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .denied, .restricted:
-            error = "Microphone access denied. Open System Settings → Privacy & Security → Microphone to allow Textream."
+            error = "麦克风权限被拒绝。请前往 系统设置 → 隐私与安全性 → 麦克风，允许 Textream。"
             openMicrophoneSettings()
             return
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
                 DispatchQueue.main.async {
                     if granted {
-                        self?.requestSpeechAuthAndBegin()
+                        if self?.transcriptionBackend == .appleSpeech {
+                            self?.requestSpeechAuthAndBegin()
+                        } else {
+                            self?.beginRecognition()
+                        }
                     } else {
-                        self?.error = "Microphone access denied. Open System Settings → Privacy & Security → Microphone to allow Textream."
+                        self?.error = "麦克风权限被拒绝。请前往 系统设置 → 隐私与安全性 → 麦克风，允许 Textream。"
                     }
                 }
             }
@@ -150,7 +178,11 @@ class SpeechRecognizer {
             break
         }
 
-        requestSpeechAuthAndBegin()
+        if transcriptionBackend == .appleSpeech {
+            requestSpeechAuthAndBegin()
+        } else {
+            beginRecognition()
+        }
     }
 
     private func requestSpeechAuthAndBegin() {
@@ -160,7 +192,7 @@ class SpeechRecognizer {
                 case .authorized:
                     self?.beginRecognition()
                 default:
-                    self?.error = "Speech recognition not authorized. Open System Settings → Privacy & Security → Speech Recognition to allow Textream."
+                    self?.error = "语音识别未授权。请前往 系统设置 → 隐私与安全性 → 语音识别，允许 Textream。"
                     self?.openSpeechRecognitionSettings()
                 }
             }
@@ -202,6 +234,10 @@ class SpeechRecognizer {
         // Cancel any pending restart to prevent overlapping beginRecognition calls
         pendingRestart?.cancel()
         pendingRestart = nil
+
+        localSenseVoiceRunner?.stop()
+        localSenseVoiceRunner = nil
+        resetPendingAnchorJumpConfirmation()
 
         if let observer = configurationChangeObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -265,15 +301,28 @@ class SpeechRecognizer {
             }
         }
 
-        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: NotchSettings.shared.speechLocale))
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
-            error = "Speech recognizer not available"
-            return
-        }
+        if transcriptionBackend == .appleSpeech {
+            let resolvedLocale = Self.resolveSpeechLocaleIdentifier(
+                preferred: NotchSettings.shared.speechLocale,
+                text: sourceText
+            )
+            if resolvedLocale != NotchSettings.shared.speechLocale {
+                NotchSettings.shared.speechLocale = resolvedLocale
+            }
 
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest else { return }
-        recognitionRequest.shouldReportPartialResults = true
+            speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: resolvedLocale))
+            guard let speechRecognizer, speechRecognizer.isAvailable else {
+                error = "语音识别器不可用"
+                return
+            }
+
+            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+            guard let recognitionRequest else { return }
+            recognitionRequest.shouldReportPartialResults = true
+        } else {
+            speechRecognizer = nil
+            recognitionRequest = nil
+        }
 
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
@@ -285,7 +334,7 @@ class SpeechRecognizer {
                 retryCount += 1
                 scheduleBeginRecognition(after: 0.5)
             } else {
-                error = "Audio input unavailable"
+                error = "音频输入不可用"
                 isListening = false
             }
             return
@@ -305,7 +354,9 @@ class SpeechRecognizer {
         inputNode.removeTap(onBus: 0)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
-            recognitionRequest.append(buffer)
+            if self?.transcriptionBackend == .appleSpeech {
+                self?.recognitionRequest?.append(buffer)
+            }
 
             guard let channelData = buffer.floatChannelData?[0] else { return }
             let frameLength = Int(buffer.frameLength)
@@ -324,45 +375,59 @@ class SpeechRecognizer {
             }
         }
 
-        let currentGeneration = sessionGeneration
-        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self else { return }
-            if let result {
-                let spoken = result.bestTranscription.formattedString
-                DispatchQueue.main.async {
-                    // Ignore stale results from a previous session
-                    guard self.sessionGeneration == currentGeneration else { return }
-                    self.retryCount = 0 // Reset on success
-                    self.lastSpokenText = spoken
-                    self.matchCharacters(spoken: spoken)
+        if transcriptionBackend == .appleSpeech,
+           let speechRecognizer,
+           let recognitionRequest {
+            let currentGeneration = sessionGeneration
+            recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+                guard let self else { return }
+                if let result {
+                    let spoken = result.bestTranscription.formattedString
+                    DispatchQueue.main.async {
+                        // Ignore stale results from a previous session
+                        guard self.sessionGeneration == currentGeneration else { return }
+                        self.retryCount = 0 // Reset on success
+                        self.lastSpokenText = spoken
+                        self.matchCharacters(spoken: spoken)
+                    }
                 }
-            }
-            if error != nil {
-                DispatchQueue.main.async {
-                    // If recognitionRequest is nil, cleanup already ran (intentional cancel) — don't retry
-                    guard self.recognitionRequest != nil else { return }
-                    if self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty && self.retryCount < self.maxRetries {
-                        self.retryCount += 1
-                        let delay = min(Double(self.retryCount) * 0.5, 1.5)
-                        self.scheduleBeginRecognition(after: delay)
-                    } else {
-                        self.isListening = false
+                if error != nil {
+                    DispatchQueue.main.async {
+                        // If recognitionRequest is nil, cleanup already ran (intentional cancel) — don't retry
+                        guard self.recognitionRequest != nil else { return }
+                        if self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty && self.retryCount < self.maxRetries {
+                            self.retryCount += 1
+                            let delay = min(Double(self.retryCount) * 0.5, 1.5)
+                            self.scheduleBeginRecognition(after: delay)
+                        } else {
+                            self.isListening = false
+                        }
                     }
                 }
             }
+        } else {
+            recognitionTask = nil
         }
 
         do {
             audioEngine.prepare()
             try audioEngine.start()
             isListening = true
+            if transcriptionBackend == .localSenseVoice {
+                let currentGeneration = sessionGeneration
+                guard startLocalSenseVoiceTranscription(generation: currentGeneration) else {
+                    cleanupRecognition()
+                    isListening = false
+                    return
+                }
+            }
         } catch {
             // Transient failure after a device switch — retry with longer delay
             if retryCount < maxRetries {
                 retryCount += 1
                 scheduleBeginRecognition(after: 0.5)
             } else {
-                self.error = "Audio engine failed: \(error.localizedDescription)"
+                self.error = "音频引擎失败：\(error.localizedDescription)"
                 isListening = false
             }
         }
@@ -377,6 +442,185 @@ class SpeechRecognizer {
         scheduleBeginRecognition(after: 0.5)
     }
 
+    private func startLocalSenseVoiceTranscription(generation: Int) -> Bool {
+        let settings = NotchSettings.shared
+        let configuredExecutablePath = settings.localSenseVoiceExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let executablePath = resolveLocalSenseVoiceExecutablePath(configuredExecutablePath) else {
+            if configuredExecutablePath.isEmpty {
+                error = "未配置本地识别程序。请在 设置 → 引导 → 本地模型 中导入 sense-voice-stream。"
+            } else {
+                error = "识别程序无效：\(configuredExecutablePath)\n请导入 sense-voice-stream 可执行文件。"
+            }
+            return false
+        }
+        let modelPath = settings.localSenseVoiceModelPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileManager = FileManager.default
+
+        guard !modelPath.isEmpty else {
+            error = "未配置本地模型文件。请在 设置 → 引导 → 本地模型 中导入 .gguf 文件。"
+            return false
+        }
+        guard fileManager.fileExists(atPath: modelPath) else {
+            error = "本地模型文件不存在：\(modelPath)"
+            return false
+        }
+
+        let language = resolveLocalSenseVoiceLanguage()
+        let dyldLibraryPaths = resolveLocalSenseVoiceLibraryPaths(executablePath: executablePath)
+
+        let runner = LocalSenseVoiceRunner()
+        let started = runner.start(
+            config: LocalSenseVoiceRunner.Config(
+                executablePath: executablePath,
+                modelPath: modelPath,
+                language: language,
+                disableGPU: settings.localSenseVoiceDisableGPU,
+                dyldLibraryPaths: dyldLibraryPaths
+            ),
+            onTranscript: { [weak self] transcript in
+                DispatchQueue.main.async {
+                    self?.handleLocalSenseVoiceTranscript(transcript, generation: generation)
+                }
+            },
+            onError: { [weak self] stderrLine in
+                guard let self else { return }
+                let normalized = stderrLine.lowercased()
+                let isImportant = normalized.contains("error")
+                    || normalized.contains("failed")
+                    || normalized.contains("dyld")
+                    || normalized.contains("couldn't")
+                guard isImportant else { return }
+                DispatchQueue.main.async {
+                    guard self.sessionGeneration == generation else { return }
+                    self.error = "本地模型错误：\(stderrLine)"
+                }
+            },
+            onExit: { [weak self] code in
+                DispatchQueue.main.async {
+                    self?.handleLocalSenseVoiceExit(code: code, generation: generation)
+                }
+            }
+        )
+
+        if !started {
+            error = runner.lastError ?? "启动本地识别失败"
+            return false
+        }
+
+        localSenseVoiceRunner = runner
+        return true
+    }
+
+    private func handleLocalSenseVoiceTranscript(_ transcript: String, generation: Int) {
+        guard sessionGeneration == generation else { return }
+        let cleaned = Self.sanitizeLocalTranscript(transcript)
+        guard !cleaned.isEmpty else { return }
+        retryCount = 0
+        lastSpokenText = cleaned
+        matchCharacters(spoken: cleaned)
+    }
+
+    private func handleLocalSenseVoiceExit(code: Int32, generation: Int) {
+        guard sessionGeneration == generation else { return }
+        guard isListening, !shouldDismiss, !sourceText.isEmpty else { return }
+        if retryCount < maxRetries {
+            retryCount += 1
+            let delay = min(Double(retryCount) * 0.5, 1.5)
+            scheduleBeginRecognition(after: delay)
+        } else {
+            isListening = false
+            error = "本地识别进程已停止（退出码：\(code)）"
+        }
+    }
+
+    private func resolveLocalSenseVoiceLanguage() -> String {
+        let configured = NotchSettings.shared.localSenseVoiceLanguage.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if configured != "auto", !configured.isEmpty {
+            return configured
+        }
+
+        if let code = Self.languageCode(of: NotchSettings.shared.speechLocale) {
+            switch code {
+            case "zh", "en", "yue", "ja", "ko":
+                return code
+            default:
+                break
+            }
+        }
+
+        if let hint = Self.dominantLanguageHint(from: sourceText) {
+            return hint
+        }
+
+        return "auto"
+    }
+
+    private func resolveLocalSenseVoiceExecutablePath(_ configuredPath: String) -> String? {
+        if isValidLocalSenseVoiceExecutable(configuredPath) {
+            return configuredPath
+        }
+
+        let home = NSHomeDirectory()
+        let candidates = [
+            "\(home)/Tools/本地语音大模型/SenseVoice.cpp/build/bin/sense-voice-stream",
+            "\(home)/Tools/SenseVoice.cpp/build/bin/sense-voice-stream",
+        ]
+
+        for candidate in candidates where isValidLocalSenseVoiceExecutable(candidate) {
+            if NotchSettings.shared.localSenseVoiceExecutablePath != candidate {
+                NotchSettings.shared.localSenseVoiceExecutablePath = candidate
+            }
+            return candidate
+        }
+        return nil
+    }
+
+    private func isValidLocalSenseVoiceExecutable(_ path: String) -> Bool {
+        let normalized = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        guard FileManager.default.fileExists(atPath: normalized) else { return false }
+        let executableName = URL(fileURLWithPath: normalized).lastPathComponent.lowercased()
+        guard executableName.contains("sense-voice-stream") else { return false }
+        return ensureExecutablePermissionIfNeeded(at: normalized)
+    }
+
+    private func resolveLocalSenseVoiceLibraryPaths(executablePath: String) -> [String] {
+        let fileManager = FileManager.default
+        let executableURL = URL(fileURLWithPath: executablePath)
+        let executableDirectory = executableURL.deletingLastPathComponent()
+
+        let candidates = [
+            executableDirectory.appendingPathComponent("../lib").standardizedFileURL.path,
+            executableDirectory.appendingPathComponent("../../lib").standardizedFileURL.path,
+            executableDirectory.path,
+        ]
+
+        var seen = Set<String>()
+        var paths: [String] = []
+        for path in candidates {
+            guard !seen.contains(path) else { continue }
+            seen.insert(path)
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue {
+                paths.append(path)
+            }
+        }
+        return paths
+    }
+
+    private func ensureExecutablePermissionIfNeeded(at path: String) -> Bool {
+        let fileManager = FileManager.default
+        if fileManager.isExecutableFile(atPath: path) {
+            return true
+        }
+        do {
+            try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: path)
+        } catch {
+            return false
+        }
+        return fileManager.isExecutableFile(atPath: path)
+    }
+
     // MARK: - Fuzzy character-level matching
 
     private func matchCharacters(spoken: String) {
@@ -387,12 +631,440 @@ class SpeechRecognizer {
         let wordResult = wordLevelMatch(spoken: spoken)
 
         let best = max(charResult, wordResult)
+        let spokenCompactCount = compactCharacters(from: spoken).count
 
         // Only move forward from the match start offset
-        let newCount = matchStartOffset + best
+        var newCount = matchStartOffset + best
+        if transcriptionBackend == .localSenseVoice {
+            // Local stream transcripts are short and noisy; cap base matcher movement
+            // so one bad partial result cannot jump an entire paragraph.
+            let maxBaseAdvance = max(28, min(180, spokenCompactCount * 7))
+            newCount = min(newCount, recognizedCharCount + maxBaseAdvance)
+        }
+
+        // Local stream ASR usually emits short segment transcripts (not always cumulative).
+        // Add a global anchor search so "jump reading" can snap to a later sentence.
+        if transcriptionBackend == .localSenseVoice,
+           let anchoredOffset = globalAnchorMatch(spoken: spoken),
+           shouldAcceptAnchorJump(to: anchoredOffset, spokenCompactCount: spokenCompactCount) {
+            newCount = max(newCount, anchoredOffset)
+        }
+
         if newCount > recognizedCharCount {
             recognizedCharCount = min(newCount, sourceText.count)
+            if transcriptionBackend == .localSenseVoice {
+                // Keep a small lookback window so local incremental transcripts can
+                // continue matching near the latest confirmed position.
+                matchStartOffset = max(0, recognizedCharCount - 24)
+            }
+        } else if transcriptionBackend == .localSenseVoice {
+            // Prevent stale far-jump confirmation state from accumulating forever.
+            if Date().timeIntervalSinceReferenceDate - pendingAnchorJumpTimestamp > 1.8 {
+                resetPendingAnchorJumpConfirmation()
+            }
         }
+    }
+
+    private func resetPendingAnchorJumpConfirmation() {
+        pendingAnchorJumpTarget = nil
+        pendingAnchorJumpHits = 0
+        pendingAnchorJumpTimestamp = 0
+    }
+
+    private func shouldAcceptAnchorJump(to anchoredOffset: Int, spokenCompactCount: Int) -> Bool {
+        guard anchoredOffset > recognizedCharCount else {
+            resetPendingAnchorJumpConfirmation()
+            return false
+        }
+
+        let delta = anchoredOffset - recognizedCharCount
+        let immediateLimit = max(90, min(260, spokenCompactCount * 7))
+        guard delta > immediateLimit else {
+            resetPendingAnchorJumpConfirmation()
+            return true
+        }
+
+        let now = Date().timeIntervalSinceReferenceDate
+        let timeout: TimeInterval = 1.8
+        let targetTolerance = max(60, spokenCompactCount * 6)
+
+        if let pending = pendingAnchorJumpTarget,
+           abs(pending - anchoredOffset) <= targetTolerance,
+           now - pendingAnchorJumpTimestamp <= timeout {
+            pendingAnchorJumpHits += 1
+        } else {
+            pendingAnchorJumpTarget = anchoredOffset
+            pendingAnchorJumpHits = 1
+        }
+        pendingAnchorJumpTimestamp = now
+
+        if pendingAnchorJumpHits >= 2 {
+            resetPendingAnchorJumpConfirmation()
+            return true
+        }
+        return false
+    }
+
+    private func rebuildCompactSourceIndex() {
+        compactSourceCharacters.removeAll(keepingCapacity: true)
+        compactSourceToOriginalOffset.removeAll(keepingCapacity: true)
+
+        let sourceChars = Array(sourceText)
+        compactSourceCharacters.reserveCapacity(sourceChars.count)
+        compactSourceToOriginalOffset.reserveCapacity(sourceChars.count)
+
+        for (index, char) in sourceChars.enumerated() {
+            for lowered in String(char).lowercased() where lowered.isLetter || lowered.isNumber {
+                compactSourceCharacters.append(lowered)
+                compactSourceToOriginalOffset.append(index + 1)
+            }
+        }
+    }
+
+    private func compactCharacters(from text: String) -> [Character] {
+        var result: [Character] = []
+        for char in text.lowercased() where char.isLetter || char.isNumber {
+            result.append(char)
+        }
+        return result
+    }
+
+    private func globalAnchorMatch(spoken: String) -> Int? {
+        guard !sourceText.isEmpty, !compactSourceCharacters.isEmpty else { return nil }
+
+        let spokenCompact = compactCharacters(from: spoken)
+        guard spokenCompact.count >= 4 else { return nil }
+        guard spokenCompact.count <= compactSourceCharacters.count else { return nil }
+        let hasPriorExact = hasPriorExactOccurrence(of: spokenCompact, beforeOriginalOffset: recognizedCharCount)
+        let hasPriorSeed = hasPriorSeedOccurrence(of: spokenCompact, beforeOriginalOffset: recognizedCharCount)
+        let hasForwardDuplicateSeed = hasForwardDuplicateSeedOccurrence(of: spokenCompact, fromOriginalOffset: recognizedCharCount)
+        let preferNearestForward = hasPriorExact || hasPriorSeed || hasForwardDuplicateSeed
+        let allowFarJump = !preferNearestForward
+
+        // Longer snippets can use strict exact global matching first.
+        if spokenCompact.count >= 6,
+           let exact = findBestForwardEndOffset(
+               for: spokenCompact,
+               allowFarJump: allowFarJump,
+               preferNearest: preferNearestForward
+           ) {
+            return exact
+        }
+
+        // Fuzzy anchor for noisy local ASR: compare against candidate windows
+        // and choose the highest-similarity forward match.
+        return fuzzyForwardEndOffset(
+            for: spokenCompact,
+            allowFarJump: allowFarJump,
+            preferNearest: preferNearestForward
+        )
+    }
+
+    private func findBestForwardEndOffset(for query: [Character], allowFarJump: Bool, preferNearest: Bool) -> Int? {
+        guard !query.isEmpty else { return nil }
+        guard query.count <= compactSourceCharacters.count else { return nil }
+
+        let upperBound = compactSourceCharacters.count - query.count
+        let localDistanceLimit = max(70, min(220, query.count * 6))
+        var bestOffset: Int?
+        var bestDistance = Int.max
+
+        if upperBound < 0 { return nil }
+        for start in 0...upperBound {
+            var matched = true
+            for index in 0..<query.count where compactSourceCharacters[start + index] != query[index] {
+                matched = false
+                break
+            }
+            guard matched else { continue }
+
+            let endCompactIndex = start + query.count
+            guard endCompactIndex > 0, endCompactIndex <= compactSourceToOriginalOffset.count else { continue }
+            let endOffset = compactSourceToOriginalOffset[endCompactIndex - 1]
+
+            // Forward-only anchor: do not snap backward.
+            guard endOffset >= recognizedCharCount else { continue }
+
+            let distance = endOffset - recognizedCharCount
+            if !allowFarJump && !preferNearest && distance > localDistanceLimit {
+                continue
+            }
+            if distance < bestDistance {
+                bestDistance = distance
+                bestOffset = endOffset
+                if distance == 0 { break }
+            }
+        }
+
+        return bestOffset
+    }
+
+    private func fuzzyForwardEndOffset(for query: [Character], allowFarJump: Bool, preferNearest: Bool) -> Int? {
+        let queryCount = query.count
+        guard queryCount >= 4 else { return nil }
+
+        let sourceCount = compactSourceCharacters.count
+        let upperBound = sourceCount - queryCount
+        guard upperBound >= 0 else { return nil }
+
+        let queryString = String(query)
+        let baseThreshold: Double
+        switch queryCount {
+        case 0...7:
+            baseThreshold = 0.45
+        case 8...11:
+            baseThreshold = 0.52
+        default:
+            baseThreshold = 0.58
+        }
+        let threshold = preferNearest ? max(0.32, baseThreshold - 0.12) : baseThreshold
+
+        var candidateStarts: [Int] = []
+        if let first = query.first {
+            for start in 0...upperBound where compactSourceCharacters[start] == first {
+                candidateStarts.append(start)
+            }
+        }
+
+        if candidateStarts.count > 240, queryCount >= 2 {
+            let second = query[1]
+            candidateStarts = candidateStarts.filter { start in
+                start + 1 < sourceCount && compactSourceCharacters[start + 1] == second
+            }
+        }
+
+        if candidateStarts.isEmpty {
+            let coarseStep = max(1, queryCount / 3)
+            candidateStarts = Array(stride(from: 0, through: upperBound, by: coarseStep))
+        } else if candidateStarts.count > 320 {
+            let strideStep = max(1, candidateStarts.count / 320)
+            candidateStarts = candidateStarts.enumerated().compactMap { index, value in
+                index % strideStep == 0 ? value : nil
+            }
+        }
+
+        let queryPrefix = Array(query.prefix(min(3, queryCount)))
+        let querySuffix = Array(query.suffix(min(3, queryCount)))
+        let strictLocalLimit = max(70, min(220, queryCount * 6))
+        let localBiasLimit: Int
+        switch queryCount {
+        case 0...6:
+            localBiasLimit = 220
+        case 7...10:
+            localBiasLimit = 320
+        case 11...14:
+            localBiasLimit = 450
+        default:
+            localBiasLimit = 600
+        }
+        let softJumpLimit: Int
+        switch queryCount {
+        case 0...6:
+            softJumpLimit = 420
+        case 7...10:
+            softJumpLimit = 700
+        case 11...14:
+            softJumpLimit = 1000
+        default:
+            softJumpLimit = Int.max
+        }
+        let farJumpSimilarityGate = 0.82
+
+        struct FuzzyCandidate {
+            let endOffset: Int
+            let similarity: Double
+            let distance: Int
+        }
+        var candidates: [FuzzyCandidate] = []
+        candidates.reserveCapacity(min(candidateStarts.count, 128))
+
+        for start in candidateStarts {
+            let end = start + queryCount
+            guard end <= sourceCount else { continue }
+
+            let window = Array(compactSourceCharacters[start..<end])
+            let windowPrefix = Array(window.prefix(queryPrefix.count))
+            let windowSuffix = Array(window.suffix(querySuffix.count))
+            let prefixMatchCount = zip(queryPrefix, windowPrefix).filter { $0 == $1 }.count
+            let suffixMatchCount = zip(querySuffix, windowSuffix).filter { $0 == $1 }.count
+
+            if queryCount >= 8 && prefixMatchCount == 0 && suffixMatchCount == 0 {
+                continue
+            }
+
+            let distance = editDistance(queryString, String(window))
+            let similarity = 1.0 - (Double(distance) / Double(queryCount))
+            guard similarity >= threshold else { continue }
+
+            let endOffset = compactSourceToOriginalOffset[end - 1]
+            guard endOffset >= recognizedCharCount else { continue }
+
+            let forwardDistance = endOffset - recognizedCharCount
+            if !allowFarJump && !preferNearest && forwardDistance > strictLocalLimit {
+                continue
+            }
+            if forwardDistance > softJumpLimit && similarity < farJumpSimilarityGate {
+                continue
+            }
+
+            candidates.append(FuzzyCandidate(
+                endOffset: endOffset,
+                similarity: similarity,
+                distance: forwardDistance
+            ))
+        }
+
+        guard !candidates.isEmpty else { return nil }
+
+        if preferNearest {
+            let nearest = candidates.sorted { lhs, rhs in
+                if lhs.distance != rhs.distance {
+                    return lhs.distance < rhs.distance
+                }
+                if abs(lhs.similarity - rhs.similarity) > 0.0001 {
+                    return lhs.similarity > rhs.similarity
+                }
+                return lhs.endOffset < rhs.endOffset
+            }
+            return nearest.first?.endOffset
+        }
+
+        let bestSimilarity = candidates.map(\.similarity).max() ?? threshold
+
+        // Phase 1: local-lock for repeated text.
+        // If we have a good-enough nearby candidate, prefer it and avoid jumping
+        // to a later duplicated paragraph.
+        let localSimilarityFloor = max(threshold + 0.08, bestSimilarity - 0.10)
+        let nearLimit = allowFarJump ? localBiasLimit : strictLocalLimit
+        let nearCandidates = candidates.filter { candidate in
+            candidate.distance <= nearLimit && candidate.similarity >= localSimilarityFloor
+        }
+        if !nearCandidates.isEmpty {
+            let nearSorted = nearCandidates.sorted { lhs, rhs in
+                if lhs.distance != rhs.distance {
+                    return lhs.distance < rhs.distance
+                }
+                if abs(lhs.similarity - rhs.similarity) > 0.0001 {
+                    return lhs.similarity > rhs.similarity
+                }
+                return lhs.endOffset < rhs.endOffset
+            }
+            return nearSorted.first?.endOffset
+        }
+        if !allowFarJump {
+            // Repeated-content ambiguity mode: no nearby anchor means no anchor.
+            // Keep progress stable and let local matcher continue incrementally.
+            return nil
+        }
+
+        // Phase 2: global fallback (for real jump-reading).
+        let similaritySlack: Double
+        switch queryCount {
+        case 0...7:
+            similaritySlack = 0.02
+        case 8...11:
+            similaritySlack = 0.05
+        default:
+            similaritySlack = 0.08
+        }
+        let keptSimilarity = max(threshold, bestSimilarity - similaritySlack)
+        let filtered = candidates.filter { $0.similarity >= keptSimilarity }
+        let sorted = filtered.sorted { lhs, rhs in
+            if lhs.distance != rhs.distance {
+                return lhs.distance < rhs.distance
+            }
+            if abs(lhs.similarity - rhs.similarity) > 0.0001 {
+                return lhs.similarity > rhs.similarity
+            }
+            return lhs.endOffset < rhs.endOffset
+        }
+
+        // 对重复文案：当多个位置都像时，优先取前面第一个（最近前向候选）。
+        return sorted.first?.endOffset
+    }
+
+    private func compactIndex(forOriginalOffset offset: Int) -> Int {
+        guard !compactSourceToOriginalOffset.isEmpty else { return 0 }
+        if offset <= 0 { return 0 }
+        if offset > compactSourceToOriginalOffset.last! {
+            return compactSourceToOriginalOffset.count
+        }
+
+        var low = 0
+        var high = compactSourceToOriginalOffset.count - 1
+        var answer = compactSourceToOriginalOffset.count
+
+        while low <= high {
+            let mid = (low + high) / 2
+            if compactSourceToOriginalOffset[mid] >= offset {
+                answer = mid
+                high = mid - 1
+            } else {
+                low = mid + 1
+            }
+        }
+        return answer
+    }
+
+    private func hasForwardDuplicateSeedOccurrence(of query: [Character], fromOriginalOffset offset: Int) -> Bool {
+        let seedLength = min(max(4, query.count / 2), 6)
+        guard query.count >= seedLength else { return false }
+        guard seedLength <= compactSourceCharacters.count else { return false }
+
+        let seed = Array(query.prefix(seedLength))
+        let startCompact = max(0, compactIndex(forOriginalOffset: offset) - 1)
+        let upperBound = compactSourceCharacters.count - seedLength
+        guard startCompact <= upperBound else { return false }
+
+        var matchCount = 0
+        for start in startCompact...upperBound {
+            var matched = true
+            for index in 0..<seedLength where compactSourceCharacters[start + index] != seed[index] {
+                matched = false
+                break
+            }
+            guard matched else { continue }
+
+            let endOffset = compactSourceToOriginalOffset[start + seedLength - 1]
+            guard endOffset >= offset else { continue }
+
+            matchCount += 1
+            if matchCount >= 2 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func hasPriorExactOccurrence(of query: [Character], beforeOriginalOffset offset: Int) -> Bool {
+        let queryCount = query.count
+        guard queryCount >= 4 else { return false }
+        guard queryCount <= compactSourceCharacters.count else { return false }
+
+        let limitCompact = compactIndex(forOriginalOffset: offset)
+        guard limitCompact >= queryCount else { return false }
+
+        let lastStart = limitCompact - queryCount
+        if lastStart < 0 { return false }
+
+        for start in 0...lastStart {
+            var matched = true
+            for index in 0..<queryCount where compactSourceCharacters[start + index] != query[index] {
+                matched = false
+                break
+            }
+            if matched {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func hasPriorSeedOccurrence(of query: [Character], beforeOriginalOffset offset: Int) -> Bool {
+        let seedLength = min(max(4, query.count / 2), 6)
+        guard query.count >= seedLength else { return false }
+        let seed = Array(query.prefix(seedLength))
+        return hasPriorExactOccurrence(of: seed, beforeOriginalOffset: offset)
     }
 
     private func charLevelMatch(spoken: String) -> Int {
@@ -455,10 +1127,10 @@ class SpeechRecognizer {
                 }
                 if found { continue }
 
-                // Skip both (substitution)
+                // Skip both (substitution). Do not advance lastGood here;
+                // otherwise long mismatch runs can falsely look like progress.
                 si += 1
                 ri += 1
-                lastGoodOrigIndex = si
             }
         }
 
@@ -592,5 +1264,299 @@ class SpeechRecognizer {
     private static func normalize(_ text: String) -> String {
         text.lowercased()
             .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+    }
+
+    private static func sanitizeLocalTranscript(_ text: String) -> String {
+        var result = text
+        result = result.replacingOccurrences(
+            of: "\\[[0-9]+(?:\\.[0-9]+)?-[0-9]+(?:\\.[0-9]+)?\\]",
+            with: " ",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "<\\|[^>]+\\|>",
+            with: " ",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func resolveSpeechLocaleIdentifier(preferred: String, text: String) -> String {
+        let supported = SFSpeechRecognizer.supportedLocales()
+        guard !supported.isEmpty else { return preferred }
+
+        if supported.contains(where: { sameLocale($0.identifier, preferred) }) {
+            return preferred
+        }
+
+        if let code = languageCode(of: preferred),
+           let match = supported.first(where: { languageCode(of: $0.identifier) == code }) {
+            return match.identifier
+        }
+
+        if let code = dominantLanguageHint(from: text),
+           let match = supported.first(where: { languageCode(of: $0.identifier) == code }) {
+            return match.identifier
+        }
+
+        let currentID = Locale.current.identifier
+        if supported.contains(where: { sameLocale($0.identifier, currentID) }) {
+            return currentID
+        }
+        if let code = languageCode(of: currentID),
+           let match = supported.first(where: { languageCode(of: $0.identifier) == code }) {
+            return match.identifier
+        }
+
+        if let en = supported.first(where: { languageCode(of: $0.identifier) == "en" }) {
+            return en.identifier
+        }
+        return supported.first?.identifier ?? preferred
+    }
+
+    private static func sameLocale(_ a: String, _ b: String) -> Bool {
+        let na = canonicalLocaleKey(a)
+        let nb = canonicalLocaleKey(b)
+        return na == nb
+    }
+
+    private static func canonicalLocaleKey(_ id: String) -> String {
+        id.lowercased().replacingOccurrences(of: "-", with: "_")
+    }
+
+    private static func languageCode(of localeID: String) -> String? {
+        let components = NSLocale.components(fromLocaleIdentifier: localeID)
+        return components[NSLocale.Key.languageCode.rawValue]?.lowercased()
+    }
+
+    private static func dominantLanguageHint(from text: String) -> String? {
+        var zh = 0
+        var ja = 0
+        var ko = 0
+
+        for scalar in text.unicodeScalars {
+            let v = scalar.value
+            switch v {
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0x20000...0x2A6DF, 0xF900...0xFAFF:
+                zh += 1
+            case 0x3040...0x309F, 0x30A0...0x30FF:
+                ja += 1
+            case 0xAC00...0xD7AF:
+                ko += 1
+            default:
+                break
+            }
+        }
+
+        if zh == 0 && ja == 0 && ko == 0 {
+            return nil
+        }
+        if zh >= ja && zh >= ko { return "zh" }
+        if ja >= zh && ja >= ko { return "ja" }
+        return "ko"
+    }
+}
+
+private final class LocalSenseVoiceRunner {
+    struct Config {
+        let executablePath: String
+        let modelPath: String
+        let language: String
+        let disableGPU: Bool
+        let dyldLibraryPaths: [String]
+    }
+
+    var lastError: String?
+
+    private var process: Process?
+    private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
+    private var outputBuffer = ""
+    private var stderrBuffer = ""
+    private var intentionallyStopped = false
+    private var lastEmittedTranscript = ""
+
+    private var onTranscript: ((String) -> Void)?
+    private var onError: ((String) -> Void)?
+    private var onExit: ((Int32) -> Void)?
+
+    private let parserQueue = DispatchQueue(label: "Textream.LocalSenseVoiceRunner")
+
+    func start(
+        config: Config,
+        onTranscript: @escaping (String) -> Void,
+        onError: @escaping (String) -> Void,
+        onExit: @escaping (Int32) -> Void
+    ) -> Bool {
+        stop()
+        lastError = nil
+        intentionallyStopped = false
+        outputBuffer = ""
+        stderrBuffer = ""
+        lastEmittedTranscript = ""
+        self.onTranscript = onTranscript
+        self.onError = onError
+        self.onExit = onExit
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: config.executablePath)
+
+        var args = [
+            "-m", config.modelPath,
+            "-l", config.language,
+            "--use-vad",
+            "--chunk-size", "80",
+            "-mmc", "8",
+            "-mnc", "120",
+            "--speech-prob-threshold", "0.2",
+        ]
+        if config.disableGPU {
+            args.append("-ng")
+        }
+        process.arguments = args
+
+        var environment = ProcessInfo.processInfo.environment
+        let existingDYLD = (environment["DYLD_LIBRARY_PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+        var mergedDYLD: [String] = []
+        for path in config.dyldLibraryPaths + existingDYLD where !path.isEmpty {
+            if !mergedDYLD.contains(path) {
+                mergedDYLD.append(path)
+            }
+        }
+        if !mergedDYLD.isEmpty {
+            environment["DYLD_LIBRARY_PATH"] = mergedDYLD.joined(separator: ":")
+        }
+        process.environment = environment
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+        self.stdoutPipe = stdoutPipe
+        self.stderrPipe = stderrPipe
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.parserQueue.async {
+                self?.consumeOutputData(data)
+            }
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.parserQueue.async {
+                self?.consumeErrorData(data)
+            }
+        }
+
+        process.terminationHandler = { [weak self] process in
+            guard let self else { return }
+            self.parserQueue.async {
+                self.clearReadHandlers()
+                let status = process.terminationStatus
+                let shouldNotify = !self.intentionallyStopped
+                self.process = nil
+                if shouldNotify {
+                    self.onExit?(status)
+                }
+            }
+        }
+
+        do {
+            try process.run()
+            self.process = process
+            return true
+        } catch {
+            clearReadHandlers()
+            self.process = nil
+            self.lastError = "无法启动本地识别程序：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func stop() {
+        intentionallyStopped = true
+        clearReadHandlers()
+        if let process, process.isRunning {
+            process.terminate()
+        }
+        process = nil
+    }
+
+    private func clearReadHandlers() {
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stdoutPipe = nil
+        stderrPipe = nil
+    }
+
+    private func consumeOutputData(_ data: Data) {
+        guard let chunk = String(data: data, encoding: .utf8), !chunk.isEmpty else { return }
+        outputBuffer.append(stripANSIEscapeCodes(from: chunk))
+        drainBuffer(&outputBuffer, handleLine: parseOutputLine)
+    }
+
+    private func consumeErrorData(_ data: Data) {
+        guard let chunk = String(data: data, encoding: .utf8), !chunk.isEmpty else { return }
+        stderrBuffer.append(stripANSIEscapeCodes(from: chunk))
+        drainBuffer(&stderrBuffer) { [weak self] line in
+            guard let self else { return }
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            self.onError?(trimmed)
+        }
+    }
+
+    private func drainBuffer(_ buffer: inout String, handleLine: (String) -> Void) {
+        while let index = buffer.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
+            let line = String(buffer[..<index])
+            handleLine(line)
+            var next = buffer.index(after: index)
+            while next < buffer.endIndex, buffer[next] == "\n" || buffer[next] == "\r" {
+                next = buffer.index(after: next)
+            }
+            buffer.removeSubrange(buffer.startIndex..<next)
+        }
+    }
+
+    private func parseOutputLine(_ rawLine: String) {
+        let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let timestampPattern = "\\[[0-9]+(?:\\.[0-9]+)?-[0-9]+(?:\\.[0-9]+)?\\]"
+        let hasTimestamp = trimmed.range(of: timestampPattern, options: .regularExpression) != nil
+        let hasSenseVoiceTag = trimmed.contains("<|")
+
+        // 兼容不同 stream 构建：
+        // 1) 标准输出: [0.00-1.23] <|zh|>...
+        // 2) 仅标签文本: <|zh|><|ASR|>...
+        guard hasTimestamp || hasSenseVoiceTag else {
+            return
+        }
+
+        var text = trimmed
+        if hasTimestamp {
+            text = text.replacingOccurrences(of: timestampPattern, with: " ", options: .regularExpression)
+        }
+        text = text.replacingOccurrences(of: "<\\|[^>]+\\|>", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !text.isEmpty else { return }
+        guard text != lastEmittedTranscript else { return }
+        lastEmittedTranscript = text
+        onTranscript?(text)
+    }
+
+    private func stripANSIEscapeCodes(from text: String) -> String {
+        text.replacingOccurrences(of: "\\u{001B}\\[[0-9;]*[A-Za-z]", with: "", options: .regularExpression)
     }
 }

@@ -18,11 +18,11 @@ enum PresentationNotesExtractor {
         var errorDescription: String? {
             switch self {
             case .unsupportedFormat:
-                return "Unsupported file format. Please drop a .pptx or .key file."
+                return "不支持的文件格式。请拖入 .pptx 或 .key 文件。"
             case .extractionFailed(let detail):
-                return "Failed to extract notes: \(detail)"
+                return "提取备注失败：\(detail)"
             case .noNotesFound:
-                return "No presenter notes found in this presentation."
+                return "该演示文稿中未找到演讲者备注。"
             }
         }
     }
@@ -56,7 +56,7 @@ enum PresentationNotesExtractor {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            throw ExtractionError.extractionFailed("Could not unzip PPTX file.")
+            throw ExtractionError.extractionFailed("无法解压 PPTX 文件。")
         }
 
         let notesDir = tempDir.appendingPathComponent("ppt/notesSlides")

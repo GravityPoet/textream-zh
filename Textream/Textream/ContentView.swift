@@ -13,27 +13,38 @@ struct ContentView: View {
     @State private var isRunning = false
     @State private var isDroppingPresentation = false
     @State private var dropError: String?
-    @State private var dropAlertTitle: String = "Import Error"
+    @State private var dropAlertTitle: String = "导入错误"
     @State private var showSettings = false
     @State private var showAbout = false
     @FocusState private var isTextFocused: Bool
 
     private let defaultText = """
-Welcome to Textream! This is your personal teleprompter that sits right below your MacBook's notch. [smile]
+欢迎来到 Textream！这是你的个人提词器，它会显示在 MacBook 刘海下方。[微笑]
 
-As you read aloud, the text will highlight in real-time, following your voice. The speech recognition matches your words and keeps track of your progress. [pause]
+当你朗读时，文字会实时高亮并跟随你的语音。语音识别会匹配你说出的内容并追踪进度。[停顿]
 
-You can pause at any time, go back and re-read sections, and the highlighting will follow along. When you finish reading all the text, the overlay will automatically close with a smooth animation. [nod]
+你可以随时暂停、回退并重读，高亮会继续同步。读完整段文本后，悬浮层会自动平滑关闭。[点头]
 
-Try reading this passage out loud to see how the highlighting works. The waveform at the bottom shows your voice activity, and you'll see the last few words you spoke displayed next to it.
+试着大声朗读这段文字，体验高亮跟读效果。底部波形会显示你的语音活动，旁边会展示你刚说过的几个词。
 
-Happy presenting! [wave]
+祝你演示顺利！[挥手]
 """
 
     private var languageLabel: String {
-        let locale = NotchSettings.shared.speechLocale
-        return Locale.current.localizedString(forIdentifier: locale)
-            ?? locale
+        let settings = NotchSettings.shared
+        if settings.speechEngineMode == .localSenseVoice {
+            let map: [String: String] = [
+                "auto": "自动",
+                "zh": "中文",
+                "yue": "粤语",
+                "en": "英语",
+                "ja": "日语",
+                "ko": "韩语",
+            ]
+            return "本地·" + (map[settings.localSenseVoiceLanguage] ?? settings.localSenseVoiceLanguage)
+        }
+        let locale = settings.speechLocale
+        return Locale.current.localizedString(forIdentifier: locale) ?? locale
     }
 
     private var currentText: Binding<String> {
@@ -104,10 +115,10 @@ Happy presenting! [wave]
                     Image(systemName: "doc.text")
                         .font(.system(size: 28, weight: .light))
                         .foregroundStyle(Color.accentColor)
-                    Text("Drop PowerPoint (.pptx) file")
+                    Text("拖入 PowerPoint（.pptx）文件")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.primary)
-                    Text("For Keynote or Google Slides,\nexport as PPTX first.")
+                    Text("如果是 Keynote 或 Google Slides，\n请先导出为 PPTX。")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -131,15 +142,15 @@ Happy presenting! [wave]
                         let ext = url.pathExtension.lowercased()
                         if ext == "key" {
                             DispatchQueue.main.async {
-                                dropAlertTitle = "Conversion Required"
-                                dropError = "Keynote files can't be imported directly. Please export your Keynote presentation as PowerPoint (.pptx) first, then drop the exported file here."
+                                dropAlertTitle = "需要转换"
+                                dropError = "Keynote 文件无法直接导入。请先将 Keynote 演示文稿导出为 PowerPoint（.pptx），再把导出的文件拖到这里。"
                             }
                             return
                         }
                         guard ext == "pptx" else {
                             DispatchQueue.main.async {
-                                dropAlertTitle = "Import Error"
-                                dropError = "Unsupported file. Drop a PowerPoint (.pptx) file."
+                                dropAlertTitle = "导入错误"
+                                dropError = "不支持的文件。请拖入 PowerPoint（.pptx）文件。"
                             }
                             return
                         }
@@ -152,7 +163,7 @@ Happy presenting! [wave]
                 .allowsHitTesting(isDroppingPresentation)
         }
         .alert(dropAlertTitle, isPresented: Binding(get: { dropError != nil }, set: { if !$0 { dropError = nil } })) {
-            Button("OK") { dropError = nil }
+            Button("确定") { dropError = nil }
         } message: {
             Text(dropError ?? "")
         }
@@ -190,7 +201,7 @@ Happy presenting! [wave]
                         HStack(spacing: 3) {
                             Image(systemName: "plus")
                                 .font(.system(size: 10, weight: .semibold))
-                            Text("Page")
+                            Text("页面")
                                 .font(.system(size: 11, weight: .medium))
                         }
                         .foregroundStyle(.secondary)
@@ -291,7 +302,7 @@ Happy presenting! [wave]
                                 Button(role: .destructive) {
                                     removePage(at: index)
                                 } label: {
-                                    Label("Delete Page", systemImage: "trash")
+                                    Label("删除页面", systemImage: "trash")
                                 }
                             }
                         }
@@ -407,15 +418,15 @@ struct AboutView: View {
 
             // App name & version
             VStack(spacing: 4) {
-                Text("Textream")
+                Text("Textream 中文版")
                     .font(.system(size: 20, weight: .bold))
-                Text("Version \(appVersion)")
+                Text("版本 \(appVersion)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
             // Description
-            Text("A free, open-source teleprompter that highlights your script in real-time as you speak.")
+            Text("一款免费开源的提词器，可在你朗读时实时高亮脚本内容。")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -442,7 +453,7 @@ struct AboutView: View {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.pink)
-                        Text("Donate")
+                        Text("赞助")
                             .font(.system(size: 12, weight: .medium))
                     }
                     .foregroundStyle(.primary)
@@ -456,15 +467,15 @@ struct AboutView: View {
             Divider().padding(.horizontal, 20)
 
             VStack(spacing: 4) {
-                Text("Made by Fatih Kadir Akin")
+                Text("作者：Fatih Kadir Akin")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("Original idea by Semih Kışlar")
+                Text("最初创意：Semih Kışlar")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
 
-            Button("OK") {
+            Button("确定") {
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
