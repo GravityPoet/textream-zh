@@ -293,7 +293,7 @@ enum SpeechEngineMode: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .apple: return "使用 macOS 语音识别（Speech.framework）。"
-        case .localSenseVoice: return "使用本地 SenseVoice 模型进行识别。"
+        case .localSenseVoice: return "使用本地语音大模型进行识别。"
         }
     }
 }

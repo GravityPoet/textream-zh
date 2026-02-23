@@ -729,7 +729,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Divider()
 
-            Text("本地模型（SenseVoice）")
+            Text("本地模型")
                 .font(.system(size: 13, weight: .medium))
 
             localPathRow(
@@ -1278,7 +1278,7 @@ struct SettingsView: View {
 
     private func importSenseVoiceExecutable() {
         let panel = NSOpenPanel()
-        panel.message = "选择 SenseVoice 的识别程序（sense-voice-stream）"
+        panel.message = "选择带有流式识别程序的本地语音大模型"
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
@@ -1321,7 +1321,7 @@ struct SettingsView: View {
 
     private func importSenseVoiceModel() {
         let panel = NSOpenPanel()
-        panel.message = "选择 SenseVoice 模型文件（.gguf）"
+        panel.message = "选择本地语音大模型文件（例如 .gguf）"
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
