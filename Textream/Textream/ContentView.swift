@@ -418,7 +418,7 @@ struct AboutView: View {
 
             // App name & version
             VStack(spacing: 4) {
-                Text("Textream 中文版")
+                Text("Textream 中文增强版")
                     .font(.system(size: 20, weight: .bold))
                 Text("版本 \(appVersion)")
                     .font(.system(size: 12))
@@ -426,19 +426,20 @@ struct AboutView: View {
             }
 
             // Description
-            Text("一款免费开源的提词器，可在你朗读时实时高亮脚本内容。")
+            Text("基于开源项目深度定制的中文演讲/录制提词器。\n\n• 完整汉化界面\n• 接入本地语音大模型\n• 优化中文跟读同步稳定性\n\n能在您朗读或口播时，确保文案平滑滚动，不“乱跳”，且无需上传任何语音数据至云端。")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
+                .fixedSize(horizontal: false, vertical: true)
 
             // Links
             HStack(spacing: 12) {
-                Link(destination: URL(string: "https://github.com/f/textream")!) {
+                Link(destination: URL(string: "https://github.com/GravityPoet/textream-zh")!) {
                     HStack(spacing: 5) {
                         Image(systemName: "chevron.left.forwardslash.chevron.right")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("GitHub")
+                        Text("GitHub 仓库")
                             .font(.system(size: 12, weight: .medium))
                     }
                     .foregroundStyle(.primary)
@@ -447,32 +448,14 @@ struct AboutView: View {
                     .background(Color.primary.opacity(0.08))
                     .clipShape(Capsule())
                 }
-
-                Link(destination: URL(string: "https://donate.stripe.com/aFa8wO4NF2S96jDfn4dMI09")!) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.pink)
-                        Text("赞助")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.pink.opacity(0.1))
-                    .clipShape(Capsule())
-                }
             }
 
             Divider().padding(.horizontal, 20)
 
             VStack(spacing: 4) {
-                Text("作者：Fatih Kadir Akin")
+                Text("上游原作者：Fatih Kadir Akin")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("最初创意：Semih Kışlar")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
             }
 
             Button("确定") {
@@ -483,7 +466,7 @@ struct AboutView: View {
             .padding(.top, 4)
         }
         .padding(24)
-        .frame(width: 320)
+        .frame(width: 380)
         .background(.ultraThinMaterial)
     }
 }
