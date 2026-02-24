@@ -2,7 +2,7 @@
   <img src="Textream/Textream/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="128" height="128" alt="Textream icon">
 </p>
 
-<h1 align="center">Textream 中文增强版（非官方）</h1>
+<h1 align="center">Textream 中文增强版 </h1>
 
 <p align="center">
   基于开源项目的中文增强版本，面向中文演讲/录制场景做了本地化与识别能力扩展。<br>
