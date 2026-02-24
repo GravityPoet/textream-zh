@@ -17,6 +17,22 @@
   <img src="docs/video.gif" width="600" alt="Textream demo">
 </p>
 
+## 下载与安装
+
+**[👉 前往 Releases 页面下载最新的 `.dmg` 安装包](https://github.com/GravityPoet/textream-zh/releases/latest)**
+
+> 需运行 **macOS 15 Sequoia** 及以上系统。兼容 Apple Silicon (M系列) 以及 Intel 设备。
+
+### 首次运行提示
+由于本应用为开源衍生版本未进行开发者签名，macOS 首次运行通常会进行拦截。
+建议您将下载好的应用拖入 `应用程序` 文件夹后，在「终端 (Terminal)」里执行下方命令来解除系统拦截：
+
+```bash
+xattr -cr /Applications/Textream.app
+```
+
+之后，在访达 (Finder) 里的「应用程序」上找到它，**右键点击并选择“打开”**即可。（此操作只需执行一次，之后就可以正常双击打开了。）
+
 ## 主要改动
 
 - 全量界面汉化（设置、提示、引导等主要页面）
