@@ -42,8 +42,8 @@
 ## 构建
 
 ```bash
-git clone <your-repo-url>
-cd textream-src-zh/Textream
+git clone https://github.com/GravityPoet/textream-zh.git
+cd textream-zh/Textream
 open Textream.xcodeproj
 ```
 
@@ -52,8 +52,4 @@ Xcode 中 `⌘R` 运行，或使用 `xcodebuild` 进行 Release 构建。
 ## 合规与归属
 
 本仓库是衍生项目。请阅读 [NOTICE](./NOTICE)。
-
-- 上游项目：`https://github.com/f/textream`
-- 上游 README 在 **2026-02-24** 标注为 MIT
-- 本仓库保留并尊重原项目署名与来源，不宣称替代原项目版权
 

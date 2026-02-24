@@ -34,13 +34,7 @@ Paste your script, hit play, and start speaking. When you're done, the overlay c
 
 ## Download
 
-**[Download the latest .dmg from Releases](https://github.com/f/textream/releases/latest)**
-
-Or install with Homebrew:
-
-```bash
-brew install f/textream/textream
-```
+**[Download the latest .dmg from Releases](https://github.com/GravityPoet/textream-zh/releases/latest)**
 
 > Requires **macOS 15 Sequoia** or later. Works on Apple Silicon and Intel.
 
@@ -169,8 +163,8 @@ View your teleprompter on **any device** — phone, tablet, or another computer 
 ### Build
 
 ```bash
-git clone https://github.com/f/textream.git
-cd textream/Textream
+git clone https://github.com/GravityPoet/textream-zh.git
+cd textream-zh/Textream
 open Textream.xcodeproj
 ```
 
@@ -214,7 +208,3 @@ MIT
 
 ---
 
-<p align="center">
-  Original idea by <a href="https://x.com/semihdev">Semih Kışlar</a> — thanks to him!<br>
-  Made by <a href="https://fka.dev">Fatih Kadir Akin</a>
-</p>
